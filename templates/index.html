@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Transmisión de Video</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+    <h1>Transmisión en Vivo</h1>
+    <img src="{{ url_for('video_feed') }}" width="640" height="480">
+    <button id="capture-btn">Capturar Imagen</button>
+    <p id="message"></p>
+
+    <script>
+        $(document).ready(function(){
+            $('#capture-btn').click(function(){
+                $.ajax({
+                    url: '/capture',
+                    type: 'POST',
+                    success: function(response){
+                        $('#message').text(response.message);
+                    },
+                    error: function(){
+                        $('#message').text('Error al capturar la imagen');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
