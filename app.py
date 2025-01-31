@@ -6,10 +6,6 @@ import time
 app = Flask(__name__)
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 
-if not cap.isOpened():
-    raise RuntimeError("No se pudo abrir la cámara. Verifica la conexión del dispositivo.")
-
-# Crear carpeta de imágenes si no existe
 IMAGE_FOLDER = os.path.join(os.getcwd(), 'images')
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
