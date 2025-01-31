@@ -27,10 +27,7 @@
 					<div class="row mb-5 pb-4">
 						<div class="col-12">
 							<!-- Video player 1422x800 -->
-							<video width="1422" height="800" controls autoplay>
-                                <source src="{{ url_for('static', filename='video/wheat-field.mp4') }}" type="video/mp4">						  
-							Your browser does not support the video tag.
-							</video>
+							<img width="640" height="480" controls autoplay src="{{ url_for('video_feed') }}">
 						</div>
 					</div>
                     <div class="mt-3">
