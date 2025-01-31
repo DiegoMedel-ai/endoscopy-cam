@@ -4,28 +4,25 @@ import os
 import time
 
 app = Flask(__name__)
-camera = cv2.VideoCapture('/dev/video1', cv2.CAP_V4L2)
+cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 
+if not cap.isOpened():
+    raise RuntimeError("No se pudo abrir la cámara. Verifica la conexión del dispositivo.")
+
+# Crear carpeta de imágenes si no existe
 IMAGE_FOLDER = os.path.join(os.getcwd(), 'images')
+os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
-if not os.path.exists(IMAGE_FOLDER):
-    os.makedirs(IMAGE_FOLDER, exist_ok=True)
-
-def gen_frames():
-    if not camera.isOpened():
-        print("Error: No se pudo abrir la capturadora de video.")
-        return
-
+def generate():
     while True:
-        success, frame = camera.read()
-        if not success:
-            print("Error al leer el frame.")
-            break
-        else:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
+        ret, frame = cap.read()
+        if ret:
+            (flag, encodedImage) = cv2.imencode(".jpg", frame)
+            if not flag:
+                continue
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' +
+                   bytearray(encodedImage) + b'\r\n')
 
 @app.route('/')
 def index():
@@ -33,23 +30,29 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/capture', methods=['POST'])
 def capture():
+    ret, frame = cap.read()
     
-    if not camera.isOpened():
-        return jsonify({"message": "Error al abrir la capturadora de video."}), 500
+    if not ret:
+        return jsonify({"message": "Error al capturar la imagen."}), 500
     
-    success, frame = camera.read()
-    if success:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        filename = f'snapshot_{timestamp}.jpg'
-        filepath = os.path.join(IMAGE_FOLDER, filename)
-        cv2.imwrite(filepath, frame)
-        return jsonify({"message": f"Imagen guardada como {filename}"})
-    else:
-        return jsonify({"message": "Error al capturar la imagen"}), 500
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    filename = f'snapshot_{timestamp}.jpg'
+    filepath = os.path.join(IMAGE_FOLDER, filename)
+    cv2.imwrite(filepath, frame)
+    
+    return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
+
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    cap.release()
+    return jsonify({"message": "Cámara liberada y aplicación cerrada."})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=True)
+    finally:
+        cap.release()
