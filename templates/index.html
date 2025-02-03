@@ -1,192 +1,50 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Transmisión de Video</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/bootstrap.min.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/templatemo-video-catalog.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/styles.css') }}"
+    />
+
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap" rel="stylesheet">
+    <script src="{{ url_for('static', filename='scripts/video.js') }}"></script>
+  </head>
+  <body>
+    <body>
+      <h1>Transmisión en Vivo</h1>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <div class="video-container">
+        <img controls autoplay src="{{ url_for('video.video_feed') }}" />
+      </div>
 
-    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap" rel="stylesheet">
+      <div class="buttons-container">
+        <button id="start-btn" class="btn btn-success">Iniciar</button>
+        <button id="stop-btn" class="btn btn-danger">Detener</button>
+        <button id="capture-btn" class="btn btn-primary">Tomar Captura</button>
+      </div>
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/templatemo-video-catalog.css') }}">
-</head>
-<body>
-    <h1>Transmisión en Vivo</h1>
+      <a href="/gallery/gallery" target="_blank" class="btn btn-primary" id="gallery-btn">Galería</a>
 
-    <div class="tm-page-wrap mx-auto">
-
-		<div class="container-fluid">
-			<div class="mx-auto tm-content-container">
-				<main>
-					<div class="row mb-5 pb-4">
-						<div class="col-12">
-							<!-- Video player 1422x800 -->
-							<img width="640" height="480" controls autoplay src="{{ url_for('video_feed') }}">
-						</div>
-                        <p id="message"></p>
-					</div>
-                    <div class="mt-3">
-                        <button id="start-btn" class="btn btn-success">Iniciar</button>
-                        <button id="stop-btn" class="btn btn-danger">Detener</button>
-                        <button id="capture-btn" class="btn btn-primary">Tomar Captura</button>
-                    </div>
-                    
-                    <p id="message" class="mt-3"></p>
-					<div class="row pt-4 pb-5">
-						<div class="col-12">
-							<h2 class="mb-5 tm-text-primary">Fotos</h2>
-							<div class="row tm-catalog-item-list">
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-01.jpg') }}" alt="Imagen 1" class="img-fluid tm-catalog-item-img">    
-		                            </div>    
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Nam tincidunt consectetur</h3>		                                
-		                            </div>
-		                        </div>
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-02.jpg') }}" alt="Imagen 1" class="img-fluid tm-catalog-item-img">    
-		                            </div>
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Praesent posuere rhoncus</h3>		                                
-		                            </div>
-		                        </div>
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-03.jpg') }}" alt="Imagen 1" class="img-fluid tm-catalog-item-img">    
-		                            </div>                            
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Turpis massa aliquam</h3>		                                
-		                            </div>
-		                        </div>
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-04.jpg') }}" alt="Imagen 1" class="img-fluid tm-catalog-item-img">    
-		                            </div>    
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Nam tincidunt consectetur</h3>		                                
-		                            </div>
-		                        </div>
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-05.jpg') }}" alt="Imagen 1" class="img-fluid tm-catalog-item-img">    
-		                            </div>
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Praesent posuere rhoncus</h3>		                                
-		                            </div>
-		                        </div>
-		                        <div class="col-lg-4 col-md-6 col-sm-12 tm-catalog-item">
-		                            <div class="position-relative tm-thumbnail-container">
-		                                <img src="{{ url_for('static', filename='img/tn-06.jpg') }}" alt="Imagen 1" alt="Image" class="img-fluid tm-catalog-item-img">    
-		                            </div>                            
-		                            <div class="p-3 tm-catalog-item-description">
-		                                <h3 class="tm-text-gray text-center tm-catalog-item-title">Turpis massa aliquam</h3>		                                
-		                            </div>
-		                        </div>
-		                    </div>
-						</div>
-					</div>
-				</main>
-			</div> 
-		</div>
-	</div>
-    <script>
-        $(document).ready(function(){
-            $('#capture-btn').click(function(){
-                $.ajax({
-                    url: '/capture',
-                    type: 'POST',
-                    success: function(response){
-                        $('#message').text(response.message);
-                    },
-                    error: function(){
-                        $('#message').text('Error al capturar la imagen');
-                    }
-                });
-            });
-        });
-    </script>
-
-<script>
-    $(document).ready(function(){
-        $('#capture-btn').click(function(){
-            $.ajax({
-                url: '/capture',
-                type: 'POST',
-                success: function(response){
-                    $('#message').text(response.message);
-                },
-                error: function(){
-                    $('#message').text('Error al capturar la imagen');
-                }
-            });
-        });
-
-        $('#start-btn').click(function(){
-            $.ajax({
-                url: '/start_recording',
-                type: 'POST',
-                success: function(response){
-                    $('#message').text(response.message);
-                },
-                error: function(){
-                    $('#message').text('Error al iniciar la transmisión');
-                }
-            });
-        });
-
-        $('#stop-btn').click(function(){
-            $.ajax({
-                url: '/stop_recording',
-                type: 'POST',
-                success: function(response){
-                    $('#message').text(response.message);
-                },
-                error: function(){
-                    $('#message').text('Error al detener la transmisión');
-                }
-            });
-        });
-    });
-</script>
-
-<script>
-    function setVideoSize() {
-        const vidWidth = 1920;
-        const vidHeight = 1080;
-        let windowWidth = window.innerWidth;
-        let newVidWidth = windowWidth;
-        let newVidHeight = windowWidth * vidHeight / vidWidth;
-        let marginLeft = 0;
-        let marginTop = 0;
-
-        if (newVidHeight < 500) {
-            newVidHeight = 500;
-            newVidWidth = newVidHeight * vidWidth / vidHeight;
-        }
-
-        if(newVidWidth > windowWidth) {
-            marginLeft = -((newVidWidth - windowWidth) / 2);
-        }
-
-        if(newVidHeight > 720) {
-            marginTop = -((newVidHeight - $('#tm-video-container').height()) / 2);
-        }
-
-        const tmVideo = $('#tm-video');
-
-        tmVideo.css('width', newVidWidth);
-        tmVideo.css('height', newVidHeight);
-        tmVideo.css('margin-left', marginLeft);
-        tmVideo.css('margin-top', marginTop);
-    }
-
-
-</script>
-
-</body>
+      <p id="message" class="mt-3"></p>
+    </body>
+  </body>
 </html>
