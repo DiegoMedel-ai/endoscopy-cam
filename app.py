@@ -1,10 +1,12 @@
 from flask import Flask, render_template
 from routes.video import video
+from routes.gallery import gallery
 
 app = Flask(__name__)
 
-# Registrar el Blueprint
+# Registrar los blueprints
 app.register_blueprint(video, url_prefix='/video')
+app.register_blueprint(gallery, url_prefix='/gallery')
 
 @app.route('/')
 def index():

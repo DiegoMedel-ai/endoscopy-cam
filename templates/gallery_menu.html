@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seleccionar Carpeta</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Seleccionar Carpeta de Imágenes</h1>
+        <p class="description">Selecciona una carpeta para ver las imágenes guardadas.</p>
+        <div class="folder-grid">
+            {% for folder, fecha_legible in folders %}
+                <div class="folder-card">
+                    <a href="{{ url_for('gallery.gallery_view', folder=folder) }}">
+                        <div class="folder-icon">📁</div>
+                        <span class="folder-name">{{ fecha_legible }}</span>
+                    </a>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

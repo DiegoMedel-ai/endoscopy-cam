@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galería - {{ folder }}</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <h1>Galería de Imágenes</h1>
+    <a href="{{ url_for('gallery.gallery_menu') }}">← Volver al menú de carpetas</a>
+
+    <div class="gallery-container">
+        {% for image in images %}
+            <div class="gallery-item">
+                <img src="{{ url_for('gallery.serve_procedure_image', filename=image) }}" alt="Imagen de galería">
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
