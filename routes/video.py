@@ -2,17 +2,67 @@ from flask import Blueprint, jsonify, Response, request
 import threading
 import cv2
 import os
+import time
 from services.media_handler import MediaHandler
+from dotenv import load_dotenv
+from app_context import app
 
-video = Blueprint('video', __name__)
+load_dotenv()
 
 # Configuración inicial
+video = Blueprint('video', __name__)
 PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
 os.makedirs(PROCEDURE_FOLDER, exist_ok=True)
 
 media_handler = MediaHandler(PROCEDURE_FOLDER)
-cap = cv2.VideoCapture(0)
+def find_capture_device():
+    for i in range(4):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            print(f"Dispositivo de video encontrado en /dev/video{i}")
+            return cap
+    raise RuntimeError("No se encontró una capturadora de video disponible.")
+
+cap = find_capture_device()
 recording_flag = threading.Event()
+
+environment = os.getenv("environment", "dev")
+
+# Configuración del GPIO para el botón
+if environment == "prod":
+    import gpiod
+    BUTTON_PIN = 70
+    chip = gpiod.Chip('gpiochip0')
+    button_line = chip.get_line(BUTTON_PIN)
+    button_line.request(consumer="button", type=gpiod.LINE_REQ_DIR_IN)
+
+button_pressed = False
+
+# Función para leer el botón
+def read_button():
+    global button_pressed
+    with app.app_context():  # Usamos el contexto global de la aplicación Flask
+        while True:
+            try:
+                button_state = button_line.get_value()
+                if button_state == 1 and not button_pressed:
+                    button_pressed = True
+                    capture()
+                    print("Botón presionado")
+
+                    while button_line.get_value() == 1:
+                        time.sleep(0.1)
+
+                    button_pressed = False
+            except Exception as e:
+                print(f"Error en read_button: {e}")
+            
+            time.sleep(0.1)
+
+if environment == "prod":
+    button_thread = threading.Thread(target=read_button)
+    button_thread.daemon = True
+    button_thread.start()
 
 @video.route('/video_feed')
 def video_feed():
@@ -28,6 +78,7 @@ def capture():
         return jsonify({"message": "Inicia una grabacion para capturar un video"}), 500
 
     filename, filepath = media_handler.save_snapshot(frame)
+    print("Imagen guardada")
     return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
 
 @video.route('/start_recording', methods=['POST'])
@@ -50,4 +101,6 @@ def stop_recording():
 @video.route('/shutdown', methods=['POST'])
 def shutdown():
     cap.release()
+    if environment == "prod":
+        button_line.release()
     return jsonify({"message": "Cámara liberada y aplicación cerrada."})
