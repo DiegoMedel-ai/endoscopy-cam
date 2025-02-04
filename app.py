@@ -1,8 +1,7 @@
 from flask import Flask, render_template
 from routes.video import video
 from routes.gallery import gallery
-
-app = Flask(__name__)
+from app_context import app
 
 # Registrar los blueprints
 app.register_blueprint(video, url_prefix='/video')

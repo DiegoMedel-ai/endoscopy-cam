@@ -5,6 +5,7 @@ import os
 import time
 from services.media_handler import MediaHandler
 from dotenv import load_dotenv
+from app_context import app
 
 load_dotenv()
 
@@ -32,15 +33,23 @@ button_pressed = False
 # Función para leer el botón
 def read_button():
     global button_pressed
-    while True:
-        if environment == "prod":
-            button_state = button_line.get_value()
-            if button_state == 0 and not button_pressed:
-                button_pressed = True
-                capture() 
-            elif button_state == 1: 
-                button_pressed = False
-        time.sleep(0.1)
+    with app.app_context():  # Usamos el contexto global de la aplicación Flask
+        while True:
+            try:
+                button_state = button_line.get_value()
+                if button_state == 1 and not button_pressed:
+                    button_pressed = True
+                    capture()
+                    print("Botón presionado")
+
+                    while button_line.get_value() == 1:
+                        time.sleep(0.1)
+
+                    button_pressed = False
+            except Exception as e:
+                print(f"Error en read_button: {e}")
+            
+            time.sleep(0.1)
 
 if environment == "prod":
     button_thread = threading.Thread(target=read_button)
