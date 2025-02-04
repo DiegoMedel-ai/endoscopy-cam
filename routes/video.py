@@ -15,7 +15,15 @@ PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
 os.makedirs(PROCEDURE_FOLDER, exist_ok=True)
 
 media_handler = MediaHandler(PROCEDURE_FOLDER)
-cap = cv2.VideoCapture(0)
+def find_capture_device():
+    for i in range(4):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            print(f"Dispositivo de video encontrado en /dev/video{i}")
+            return cap
+    raise RuntimeError("No se encontró una capturadora de video disponible.")
+
+cap = find_capture_device()
 recording_flag = threading.Event()
 
 environment = os.getenv("environment", "dev")
@@ -70,6 +78,7 @@ def capture():
         return jsonify({"message": "Inicia una grabacion para capturar un video"}), 500
 
     filename, filepath = media_handler.save_snapshot(frame)
+    print("Imagen guardada")
     return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
 
 @video.route('/start_recording', methods=['POST'])
