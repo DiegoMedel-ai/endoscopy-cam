@@ -13,7 +13,7 @@
     <div class="gallery-container">
         {% for image in images %}
             <div class="gallery-item">
-                <img src="{{ url_for('gallery.serve_procedure_image', filename=image) }}" alt="Imagen de galería">
+                <img src="{{ url_for('gallery.serve_encrypted_image', folder=folder, filename=image.split('/')[-1]) }}" alt="Imagen de galería">
             </div>
         {% endfor %}
     </div>
