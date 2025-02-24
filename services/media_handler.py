@@ -3,6 +3,7 @@ import time
 import cv2
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+import queue
 
 load_dotenv()
 
@@ -10,6 +11,8 @@ class MediaHandler:
     def __init__(self, base_folder):
         self.base_folder = base_folder
         self.session_folder = None
+
+        self.frame_queue = queue.Queue(maxsize=10)
 
         # Obtener la clave de cifrado desde las variables de entorno
         self.secret_key = os.getenv("SECRET_KEY")
@@ -55,11 +58,13 @@ class MediaHandler:
         return decrypted_data
 
     def generate(self, cap):
-
         while True:
             ret, frame = cap.read()
             if not ret:
                 continue
+
+            if not self.frame_queue.full():
+                self.frame_queue.put(frame)
 
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
@@ -70,7 +75,6 @@ class MediaHandler:
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
     def record_video(self, cap, recording_flag):
-
         if self.session_folder is None:
             raise ValueError("La sesión no ha sido iniciada. Llama a start_session() antes de grabar video.")
 
@@ -81,13 +85,12 @@ class MediaHandler:
         video_writer = cv2.VideoWriter(video_path, fourcc, 20.0, (640, 480))
 
         while recording_flag.is_set():
-            ret, frame = cap.read()
-            if ret:
+            if not self.frame_queue.empty():
+                frame = self.frame_queue.get()
                 video_writer.write(frame)
 
         video_writer.release()
 
-        # Leer el video y cifrarlo
         with open(video_path, "rb") as video_file:
             encrypted_data = self.cipher.encrypt(video_file.read())
 
@@ -95,7 +98,6 @@ class MediaHandler:
         with open(encrypted_video_path, "wb") as encrypted_file:
             encrypted_file.write(encrypted_data)
 
-        # Eliminar el video original
         os.remove(video_path)
 
         return encrypted_video_path
