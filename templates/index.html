@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <title>Transmisión de Video</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
+    <!-- <link
       href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap"
       rel="stylesheet"
     />
     <link
       href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap"
       rel="stylesheet"
-    />
+    /> -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/bootstrap.min.css') }}"
@@ -25,7 +25,7 @@
       href="{{ url_for('static', filename='css/styles.css') }}"
     />
 
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="{{ url_for('static', filename='scripts/jquery-3.5.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='scripts/video.js') }}"></script>
   </head>
   <body>
