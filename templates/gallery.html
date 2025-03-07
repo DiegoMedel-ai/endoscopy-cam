@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,15 +13,18 @@
             gap: 10px;
             justify-content: center;
         }
+
         .gallery-item {
             position: relative;
             display: inline-block;
             transition: transform 0.3s ease-in-out;
             cursor: pointer;
         }
+
         .gallery-item:hover {
             transform: scale(1.1);
         }
+
         .gallery-item img {
             width: 150px;
             height: 150px;
@@ -28,6 +32,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
+
         .image-checkbox {
             position: absolute;
             top: 10px;
@@ -38,10 +43,12 @@
             z-index: 20;
             opacity: 0.8;
         }
-        .image-checkbox:checked + img {
+
+        .image-checkbox:checked+img {
             border: 3px solid #4CAF50;
             box-shadow: 0 4px 12px rgba(0, 255, 0, 0.5);
         }
+
         button {
             display: block;
             margin: 20px auto;
@@ -54,9 +61,11 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
+
         button:hover {
             background-color: #0056b3;
         }
+
         .modal {
             display: none;
             position: fixed;
@@ -69,11 +78,13 @@
             align-items: center;
             z-index: 50;
         }
+
         .modal img {
             max-width: 90%;
             max-height: 90%;
             border-radius: 10px;
         }
+
         .modal-close {
             position: absolute;
             top: 20px;
@@ -89,8 +100,31 @@
             document.querySelectorAll('.image-checkbox:checked').forEach(checkbox => {
                 selectedImages.push(checkbox.value);
             });
-            console.log("Imágenes seleccionadas:", selectedImages);
-            alert("Imágenes seleccionadas: " + selectedImages.join(", "));
+
+            if (selectedImages.length === 0) {
+                alert("No se ha seleccionado ninguna imagen.");
+                return;
+            }
+
+            fetch('/upload_images', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    folder: '{{ folder }}',
+                    image_names: selectedImages
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Respuesta del servidor:", data);
+                alert(data.message || data.error);
+            })
+            .catch(error => {
+                console.error("Error al enviar las imágenes:", error);
+                alert("Hubo un error al enviar las imágenes.");
+            });
         }
 
         function openModal(event, src) {
@@ -107,24 +141,28 @@
         }
     </script>
 </head>
+
 <body>
     <h1>Galería de Imágenes</h1>
     <a href="{{ url_for('gallery.gallery_menu') }}">← Volver al menú de carpetas</a>
 
     <div class="gallery-container">
         {% for image in images %}
-            <div class="gallery-item" onclick="openModal(event, '{{ url_for('gallery.serve_encrypted_image', folder=folder, filename=image.split('/')[-1]) }}')">
-                <input type="checkbox" class="image-checkbox" value="{{ image.split('/')[-1] }}">
-                <img src="{{ url_for('gallery.serve_encrypted_image', folder=folder, filename=image.split('/')[-1]) }}" alt="Imagen de galería">
-            </div>
+        <div class="gallery-item"
+            onclick="openModal(event, '{{ url_for('gallery.serve_encrypted_image', folder=folder, filename=image.split('/')[-1]) }}')">
+            <input type="checkbox" class="image-checkbox" value="{{ image.split('/')[-1] }}">
+            <img src="{{ url_for('gallery.serve_encrypted_image', folder=folder, filename=image.split('/')[-1]) }}"
+                alt="Imagen de galería">
+        </div>
         {% endfor %}
     </div>
-    
-    <button onclick="getSelectedImages()">Obtener imágenes seleccionadas</button>
-    
+
+    <button onclick="getSelectedImages()">Subir las imagenes al cielo</button>
+
     <div id="image-modal" class="modal" onclick="closeModal()">
         <span class="modal-close">&times;</span>
         <img id="modal-image" src="" alt="Imagen ampliada">
     </div>
 </body>
+
 </html>
