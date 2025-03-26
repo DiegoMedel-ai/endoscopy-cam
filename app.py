@@ -25,7 +25,6 @@ def index():
 
 @app.route('/upload_images', methods=['POST'])
 def upload_images():
-
     data = request.get_json()
     folder = data.get('folder') # nombre del procedimiento  
     image_names = data.get('image_names', []) #nombres de las imgenes
@@ -33,58 +32,56 @@ def upload_images():
     if not folder or not image_names:
         return jsonify({"message": "El nombre del procedimiento y las imágenes son requeridas."}), 400
     
-    folder_path = os.path.join(BASE_FOLDER, folder) 
+    folder_path = os.path.join(PROCEDURE_FOLDER, folder) 
 
     if not os.path.exists(folder_path):
         return jsonify({"message": "El procedimiento no existe."}), 404
 
-    decrypted_images = [] # las voy a desencriptar pero las podemos enviar encriptadas
-    #encrypted_images = [] # por si las queremos enviar encriptadas
-
+    decrypted_images = []
+    
     for image_name in image_names:
         encrypted_filepath = os.path.join(folder_path, image_name)
         if not os.path.exists(encrypted_filepath):
-            return jsonify({"message": "La imagen no existe."}), 404
-            continue
+            return jsonify({"message": f"La imagen {image_name} no existe."}), 404
         
         try:
             decrypted_data = media_handler.decrypt_file(encrypted_filepath)
-            decrypted_images.append(decrypted_data)
-
-            #encriptadas
-            #with open(encrypted_filepath, "rb") as encrypted_file:
-            #    encrypted_data = encrypted_file.read()
-            #encrypted_images.append((image_name, encrypted_data))
-
+            clean_name = image_name.replace(".enc", "") if image_name.endswith(".enc") else image_name
+            decrypted_images.append((clean_name, decrypted_data))
         except Exception as e:
             print(f"Error al descifrar {image_name}: {e}")
-            continue
+            return jsonify({"message": f"Error al procesar {image_name}"}), 500
     
     if not decrypted_images:
         return jsonify({"message": "No se pudieron descifrar las imágenes."}), 404
 
-    #if not encrypted_images:
-    #    return jsonify({"message": "No se pudieron encriptar las imágenes."}), 404
-
-
-    # con request ennviamos las imaganes al cielo
-
     try:
+        # Preparamos los archivos para enviar
         files = []
+        for image_name, image_data in decrypted_images:
+            files.append(('files', (image_name, image_data, 'image/jpeg')))
 
-        #for image_name, encrypted_data in encrypted_images:
-        #    files.append(('images', (image_name, encrypted_data, 'application/octet-stream'))) #el application/octet-stream es para enviar los archicos .enc
+        # Configuramos la URL y headers
+        url = 'https://69c7-187-189-148-91.ngrok-free.app/api/public-upload'
+        headers = {
+            'Authorization': 'Bearer token-secreto-torre-medica',  # Reemplaza con tu token real
+        }
 
-        for image_name, decrypted_data in decrypted_images:
-            files.append(('images', (image_name, decrypted_data, 'image/jpg')))
-
-        response = requests.post('https://cielo.andresvalesverga', files=files)
+        # Enviamos la solicitud
+        response = requests.post(url, files=files, headers=headers)
         response.raise_for_status()
-        return jsonify({"message": "Las imágenes han sido enviadas exitosamente."}), 200
+        
+        return jsonify({
+            "message": "Las imágenes han sido enviadas exitosamente.",
+            "response": response.json()
+        }), 200
 
     except requests.exceptions.RequestException as e:
-        print(f"Error al enviar las mamalonas al cielo: {e}")
-        return jsonify({"message": "Error al enviar las imagenes al cielo."}), 500
-
+        print(f"Error al enviar las imágenes: {e}")
+        return jsonify({
+            "message": "Error al enviar las imágenes al servidor remoto.",
+            "error": str(e)
+        }), 500
+        
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
