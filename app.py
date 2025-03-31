@@ -5,10 +5,9 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from routes.video import transcription_log  # Importa el log compartido
 
-
-
 from routes.video import video
 from routes.gallery import gallery
+from routes.audio import create_audio_blueprint
 from app_context import app
 
 import os
@@ -19,6 +18,7 @@ import subprocess
 import whisper
 from threading import Lock
 from services.media_handler import MediaHandler
+from datetime import datetime
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 model = whisper.load_model("base")  # O "tiny" si estás en hardware limitado
@@ -31,6 +31,9 @@ transcription_log = []
 
 app.register_blueprint(video, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
+audio = create_audio_blueprint(PROCEDURE_FOLDER, media_handler)
+app.register_blueprint(audio, url_prefix='/audio')
+
 CORS(app)
 
 def wait_until_file_stable(path, timeout=1.0, check_interval=0.1):
@@ -109,6 +112,39 @@ def upload_images():
             "error": str(e)
         }), 500
         
+
+@app.route('/upload_audio', methods=['POST'])
+def upload_audio():
+    file = request.files.get('audio_file')
+    if not file:
+        return 'No audio file received', 400
+
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    base_filename = f"audio_{timestamp}"
+    webm_path = os.path.join('AUDIO_OUTPUT', base_filename + '.webm')
+    mp3_path = os.path.join('AUDIO_OUTPUT', base_filename + '.mp3')
+
+    os.makedirs('AUDIO_OUTPUT', exist_ok=True)
+    file.save(webm_path)
+    print(f"✅ Audio .webm guardado en: {webm_path}")
+
+    # Convertir a mp3 usando FFmpeg
+    try:
+        subprocess.run([
+            'ffmpeg',
+            '-i', webm_path,
+            '-vn',  # no video
+            '-acodec', 'libmp3lame',
+            '-q:a', '2',  # calidad buena
+            mp3_path
+        ], check=True)
+        print(f"🎧 Audio convertido exitosamente a MP3: {mp3_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error al convertir audio: {e}")
+        return 'Error converting to MP3', 500
+
+    return 'Audio saved and converted to MP3', 200
+
 @socketio.on('connect')
 def handle_connect():
     print("🟢 Cliente conectado vía WebSocket")

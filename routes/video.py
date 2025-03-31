@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify, Response, request
-import cv2
 import os
 import eventlet
 import threading
@@ -32,13 +31,19 @@ def capture():
     if not recording_flag.is_set():
         return jsonify({"message": "No se está grabando. Inicie una grabación antes de capturar imágenes."}), 400
 
-    ret, frame = cap.read()
-    if not ret:
-        return jsonify({"message": "Inicia una grabacion para capturar un video"}), 500
+    try:
+        frame = media_handler.latest_frame
+        if frame is None:
+            return jsonify({"message": "Aún no hay frames disponibles para capturar"}), 500
 
-    filename, filepath = media_handler.save_snapshot(frame)
-    print("Imagen guardada")
-    return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
+        filename, filepath = media_handler.save_snapshot(frame)
+        print("📸 Imagen guardada como", filename)
+        return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
+
+    except Exception as e:
+        print("❌ Error al capturar imagen:", e)
+        return jsonify({"message": "Error interno al capturar imagen"}), 500
+
 
 
 
