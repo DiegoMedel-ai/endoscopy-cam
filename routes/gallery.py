@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, send_file, abort
+from flask import Blueprint, render_template, send_file, abort, jsonify 
 import os
 import locale
 from datetime import datetime
@@ -53,6 +53,24 @@ def gallery_menu():
     return render_template('gallery_menu.html', folders=translated_folders)
 
 
+@gallery.route('/galleryMedApp')
+def get_gallery():
+    try:
+        folders = [f for f in os.listdir(IMAGE_BASE_FOLDER) 
+                  if os.path.isdir(os.path.join(IMAGE_BASE_FOLDER, f))]
+        
+        if not folders:
+            return jsonify({"error": "No hay imágenes disponibles"}), 404
+        
+        translated_folders = [{
+            "folder": folder,
+            "fecha_legible": traducir_fecha(folder)
+        } for folder in sorted(folders, reverse=True)]
+        
+        return jsonify(translated_folders)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @gallery.route('/gallery/<folder>')
 def gallery_view(folder):
     # Asegurarse de que la carpeta existe
@@ -88,3 +106,25 @@ def serve_encrypted_image(folder, filename):
     except Exception as e:
         print(f"Error al desencriptar {filename}: {e}")
         abort(500, description="Error al procesar la imagen")
+
+@gallery.route('/folders', methods=['GET'])
+def get_folders():
+    try:
+        # Listar todas las carpetas dentro de "PROCEDURES/"
+        folders = [f for f in os.listdir(IMAGE_BASE_FOLDER) 
+                  if os.path.isdir(os.path.join(IMAGE_BASE_FOLDER, f))]
+        
+        if not folders:
+            return jsonify([])
+        
+        # Convertir los nombres de carpeta a fechas legibles
+        translated_folders = [{
+            "folder": folder,
+            "fecha_legible": traducir_fecha(folder)
+        } for folder in sorted(folders, reverse=True)]
+        
+        return jsonify(translated_folders)
+    
+    except Exception as e:
+        print(f"Error al listar carpetas: {e}")
+        return jsonify({"error": str(e)}), 500
