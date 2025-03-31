@@ -18,6 +18,7 @@ app.register_blueprint(video, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
 
 CORS(app)
+CORS(app, resources={r"/gallery/*": {"origins": "*"}})
 
 @app.route('/')
 def index():
