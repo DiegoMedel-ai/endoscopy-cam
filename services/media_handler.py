@@ -8,6 +8,14 @@ import eventlet
 
 load_dotenv()
 
+def find_capture_device():
+    for i in range(4):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            print(f"Dispositivo de video encontrado en /dev/video{i}")
+            return cap
+    raise RuntimeError("No se encontró una capturadora de video disponible.")
+
 class MediaHandler:
     def __init__(self, base_folder):
         self.base_folder = base_folder
@@ -36,7 +44,7 @@ class MediaHandler:
           - self.record_queue para grabación (sin límite).
         """
         print("🎥 Iniciando captura de frames...", flush=True)
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Forzar DirectShow en Windows
+        cap = find_capture_device()
         if not cap.isOpened():
             print("❌ No se pudo abrir la cámara en capture_frames", flush=True)
             return
