@@ -16,6 +16,8 @@ def find_capture_device():
             return cap
     raise RuntimeError("No se encontró una capturadora de video disponible.")
 
+cap = find_capture_device()
+
 class MediaHandler:
     def __init__(self, base_folder):
         self.base_folder = base_folder
@@ -44,7 +46,6 @@ class MediaHandler:
           - self.record_queue para grabación (sin límite).
         """
         print("🎥 Iniciando captura de frames...", flush=True)
-        cap = find_capture_device()
         if not cap.isOpened():
             print("❌ No se pudo abrir la cámara en capture_frames", flush=True)
             return

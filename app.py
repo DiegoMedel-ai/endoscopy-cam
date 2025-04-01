@@ -1,5 +1,4 @@
 import eventlet
-eventlet.monkey_patch()
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -20,8 +19,8 @@ from threading import Lock
 from services.media_handler import MediaHandler
 from datetime import datetime
 
-socketio = SocketIO(app, cors_allowed_origins="*")
-model = whisper.load_model("base")  # O "tiny" si estás en hardware limitado
+# socketio = SocketIO(app, cors_allowed_origins="*")
+# model = whisper.load_model("base")  # O "tiny" si estás en hardware limitado
 PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
 media_handler = MediaHandler(PROCEDURE_FOLDER)
 TMP_FOLDER = os.path.join(os.getcwd(), "tmp")
@@ -146,62 +145,62 @@ def upload_audio():
 
     return 'Audio saved and converted to MP3', 200
 
-@socketio.on('connect')
-def handle_connect():
-    print("🟢 Cliente conectado vía WebSocket")
+# @socketio.on('connect')
+# def handle_connect():
+#     print("🟢 Cliente conectado vía WebSocket")
 
-@socketio.on('audio_chunk')
-def handle_audio_chunk(data):
-    webm_path = None
-    wav_path = None
+# @socketio.on('audio_chunk')
+# def handle_audio_chunk(data):
+#     webm_path = None
+#     wav_path = None
 
-    try:
-        print("🔄 Recibiendo audio...")
-        audio_base64 = data['audio'].split(',')[1]
-        audio_bytes = base64.b64decode(audio_base64)
-        print("Longitud de audio_bytes:", len(audio_bytes))
+#     try:
+#         print("🔄 Recibiendo audio...")
+#         audio_base64 = data['audio'].split(',')[1]
+#         audio_bytes = base64.b64decode(audio_base64)
+#         print("Longitud de audio_bytes:", len(audio_bytes))
 
-        timestamp = int(time.time() * 1000)
-        webm_path = os.path.join('tmp', f"audio_{timestamp}.webm")
-        with open(webm_path, 'wb') as f:
-            f.write(audio_bytes)
+#         timestamp = int(time.time() * 1000)
+#         webm_path = os.path.join('tmp', f"audio_{timestamp}.webm")
+#         with open(webm_path, 'wb') as f:
+#             f.write(audio_bytes)
 
-        time.sleep(0.1)  # ⚠️ Esperar más tiempo ayuda
+#         time.sleep(0.1)  # ⚠️ Esperar más tiempo ayuda
 
-        if not os.path.exists(webm_path) or os.path.getsize(webm_path) < 10000:
-            print(f"⚠️ Archivo {webm_path} inválido o muy pequeño. Se omitirá.")
-            return
+#         if not os.path.exists(webm_path) or os.path.getsize(webm_path) < 10000:
+#             print(f"⚠️ Archivo {webm_path} inválido o muy pequeño. Se omitirá.")
+#             return
 
-        print("Archivo temporal creado:", webm_path)
+#         print("Archivo temporal creado:", webm_path)
 
-        # Convertir a WAV (usando ffmpeg)
-        wav_path = webm_path.replace('.webm', '.wav')
-        command = ['ffmpeg', '-loglevel', 'quiet', '-y', '-i', webm_path, '-ac', '1', '-ar', '16000', wav_path]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#         # Convertir a WAV (usando ffmpeg)
+#         wav_path = webm_path.replace('.webm', '.wav')
+#         command = ['ffmpeg', '-loglevel', 'quiet', '-y', '-i', webm_path, '-ac', '1', '-ar', '16000', wav_path]
+#         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        if result.returncode != 0:
-            print("❌ Error al convertir con ffmpeg:", result.stderr.decode())
-            return
+#         if result.returncode != 0:
+#             print("❌ Error al convertir con ffmpeg:", result.stderr.decode())
+#             return
 
-        print("✅ Conversión exitosa:", wav_path)
+#         print("✅ Conversión exitosa:", wav_path)
 
-        print("🎧 Transcribiendo...")
-        result = model.transcribe(wav_path, language="es")
-        text = result['text'].strip()
-        print("✅ Transcripción obtenida:", text)
+#         print("🎧 Transcribiendo...")
+#         result = model.transcribe(wav_path, language="es")
+#         text = result['text'].strip()
+#         print("✅ Transcripción obtenida:", text)
 
-        if text:
-            emit('transcription', {'text': text})
-            transcription_log.append(text)
+#         if text:
+#             emit('transcription', {'text': text})
+#             transcription_log.append(text)
 
-    except Exception as e:
-        print("❌ Error al procesar audio:", e)
+#     except Exception as e:
+#         print("❌ Error al procesar audio:", e)
 
-    finally:
-        for path in [webm_path, wav_path]:
-            if path and os.path.exists(path):
-                os.remove(path)
-                print(f"🪩 Archivo temporal eliminado: {path}")
+#     finally:
+#         for path in [webm_path, wav_path]:
+#             if path and os.path.exists(path):
+#                 os.remove(path)
+#                 print(f"🪩 Archivo temporal eliminado: {path}")
 
 
 
