@@ -128,3 +128,56 @@ def get_folders():
     except Exception as e:
         print(f"Error al listar carpetas: {e}")
         return jsonify({"error": str(e)}), 500
+
+@gallery.route('/api/<folder>', methods=['GET'])
+def get_images_json(folder):
+    folder_path = os.path.join(IMAGE_BASE_FOLDER, folder)
+
+    if not os.path.exists(folder_path):
+        return jsonify({"error": f"La carpeta {folder} no existe."}), 404
+
+    image_files = [img for img in os.listdir(folder_path) if img.endswith('.jpg.enc')]
+
+    return jsonify({
+        "folder": folder,
+        "images": image_files
+    })
+
+    
+@gallery.route('/take-photo')
+def take_last_photo():
+    try:
+        # Obtener la carpeta más reciente por fecha
+        folders = sorted([
+            f for f in os.listdir(IMAGE_BASE_FOLDER)
+            if os.path.isdir(os.path.join(IMAGE_BASE_FOLDER, f))
+        ], reverse=True)
+
+        if not folders:
+            return jsonify({"error": "No hay carpetas disponibles"}), 404
+
+        latest_folder = folders[0]
+        folder_path = os.path.join(IMAGE_BASE_FOLDER, latest_folder)
+
+        # Obtener la imagen más reciente .jpg.enc
+        encrypted_images = sorted([
+            f for f in os.listdir(folder_path)
+            if f.endswith('.jpg.enc')
+        ], reverse=True)
+
+        if not encrypted_images:
+            return jsonify({"error": "No hay imágenes cifradas en la carpeta"}), 404
+
+        latest_image = encrypted_images[0]
+        encrypted_path = os.path.join(folder_path, latest_image)
+
+        with open(encrypted_path, "rb") as file:
+            encrypted_data = file.read()
+
+        decrypted_data = cipher.decrypt(encrypted_data)
+
+        return send_file(io.BytesIO(decrypted_data), mimetype='image/jpeg')
+
+    except Exception as e:
+        print(f"Error al obtener la última imagen: {e}")
+        return jsonify({"error": str(e)}), 500

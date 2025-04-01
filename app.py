@@ -35,6 +35,7 @@ audio = create_audio_blueprint(PROCEDURE_FOLDER, media_handler)
 app.register_blueprint(audio, url_prefix='/audio')
 
 CORS(app)
+CORS(app, resources={r"/gallery/*": {"origins": "*"}})
 
 def wait_until_file_stable(path, timeout=1.0, check_interval=0.1):
     last_size = -1
