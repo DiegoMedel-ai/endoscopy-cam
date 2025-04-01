@@ -28,8 +28,8 @@ def video_feed():
 
 @video.route('/capture', methods=['POST'])
 def capture():
-    if not recording_flag.is_set():
-        return jsonify({"message": "No se está grabando. Inicie una grabación antes de capturar imágenes."}), 400
+    # if not recording_flag.is_set():
+    #     return jsonify({"message": "No se está grabando. Inicie una grabación antes de capturar imágenes."}), 400
 
     try:
         frame = media_handler.latest_frame
