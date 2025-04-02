@@ -14,11 +14,11 @@ import tempfile
 
 load_dotenv()
 
-_capture_device = None  # Variable global para almacenar el dispositivo de captura
+_capture_device = False  # Variable global para almacenar el dispositivo de captura
 
 def find_capture_device():
     global _capture_device
-    if _capture_device is not None:
+    if _capture_device is not False:
         print("⚠️ Dispositivo de captura ya inicializado. Reutilizando...", flush=True)
         return _capture_device
 
@@ -26,12 +26,12 @@ def find_capture_device():
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
             print(f"Dispositivo de video encontrado en /dev/video{i}", flush=True)
-            _capture_device = cap  # Almacena el dispositivo para reutilizarlo
+            _capture_device = True  # Almacena el dispositivo para reutilizarlo
             return cap
     raise RuntimeError("No se encontró una capturadora de video disponible.")
 
 class MediaHandler:
-    def __init__(self, base_folder):
+    def __init__(self, base_folder, is_for_image=False):
         self.base_folder = base_folder
         self.session_folder = None
         self.video_process = None
@@ -50,7 +50,7 @@ class MediaHandler:
         model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
         self.model = Model(model_path)
 
-        if not hasattr(self, 'cap') or self.cap is None:
+        if not is_for_image:
             self.cap = find_capture_device()
 
     def start_session(self,usuario=None):

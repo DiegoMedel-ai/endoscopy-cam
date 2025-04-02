@@ -20,7 +20,6 @@ def create_video_blueprint(handler):
     def video_feed():
         return Response(handler.generate(),
                         mimetype='multipart/x-mixed-replace; boundary=frame')
-        return Response(handler.generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
     @video.route('/capture', methods=['POST'])
     def capture():
@@ -70,8 +69,8 @@ def create_video_blueprint(handler):
         print("🎥 Hilo de grabación de video lanzado", flush=True)
 
         # 3) Record audio invoca su propio hilo
-        handler.start_audio_recording()
-        print("🎙️ Hilo de grabación de audio lanzado", flush=True)
+        # handler.start_audio_recording()
+        # print("🎙️ Hilo de grabación de audio lanzado", flush=True)
 
         return jsonify({"message":"Grabación iniciada","status":"success"}), 200
 
@@ -85,21 +84,21 @@ def create_video_blueprint(handler):
         print("🛑 recording_flag desactivado", flush=True)
 
         # Detener audio
-        handler.stop_audio_recording()
-        print("✅ Audio detenido", flush=True)
+        # handler.stop_audio_recording()
+        # print("✅ Audio detenido", flush=True)
 
-        # Aquí podrías también unirte al hilo de video si quisieras
-        # pero record_video deja de iterar cuando recording_flag.clear()
+        # # Aquí podrías también unirte al hilo de video si quisieras
+        # # pero record_video deja de iterar cuando recording_flag.clear()
 
-        # Transcripción y guardado
-        transcription = handler.transcribe_audio()
-        encrypted = handler.save_transcription(transcription)
-        print("✅ Transcripción guardada", flush=True)
+        # # Transcripción y guardado
+        # transcription = handler.transcribe_audio()
+        # encrypted = handler.save_transcription(transcription)
+        # print("✅ Transcripción guardada", flush=True)
 
         return jsonify({
             "message":"Grabación detenida",
-            "transcription": transcription,
-            "transcription_file": os.path.basename(encrypted),
+            "transcription": "",
+            "transcription_file": "",
             "status":"success"}), 200
 
     return video

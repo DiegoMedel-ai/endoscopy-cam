@@ -9,13 +9,13 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 
 from routes.gallery import gallery
-from routes.audio import create_audio_blueprint
+#from routes.audio import create_audio_blueprint
 from routes.video import create_video_blueprint
 from services.media_handler import MediaHandler
 from app_context import app
 
 # ✅ Habilita CORS completo
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "https://endoscopycam1.local"}}, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ✅ Configuraciones
@@ -28,12 +28,12 @@ audio_processing_lock = Lock()
 transcription_log = []
 
 # ✅ Blueprints
-audio_bp = create_audio_blueprint(media_handler)
+#audio_bp = create_audio_blueprint(media_handler)
 video_bp = create_video_blueprint(media_handler)
 
 app.register_blueprint(video_bp, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
-app.register_blueprint(audio_bp, url_prefix='/audio')
+#app.register_blueprint(audio_bp, url_prefix='/audio')
 
 
 print("MAX_CONTENT_LENGTH:", app.config['MAX_CONTENT_LENGTH'])
@@ -116,5 +116,4 @@ def upload_audio():
 # MAIN APP
 # ----------------------------------------------------------
 if __name__ == '__main__':
-
-    socketio.run(app, host='0.0.0.0', port=8000, debug=True, use_reloader=False)
+    app.run(host='192.168.12.1', port=8000, debug=False, ssl_context=('cert.pem', 'key.pem'))

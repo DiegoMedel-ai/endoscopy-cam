@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, send_file, abort, jsonify, request
+from flask import Blueprint, render_template, send_file, abort, jsonify, request, send_from_directory
 import os
 import locale
 from datetime import datetime
@@ -18,7 +18,7 @@ gallery = Blueprint('gallery', __name__)
 # Ruta base de las imágenes
 IMAGE_BASE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
 
-media_handler = MediaHandler(IMAGE_BASE_FOLDER)
+media_handler = MediaHandler(IMAGE_BASE_FOLDER, is_for_image=True)
 
 def traducir_fecha(fecha_numerica):
     try:
@@ -82,8 +82,9 @@ def gallery_view(folder):
 
     # Crear rutas dinámicas para visualizar
     image_paths = [f"/procedures/{folder}/{img}" for img in image_files]
+    pdf_paths = [f"/procedures/{folder}/{pdf}" for pdf in pdf_files]
 
-    return render_template('gallery.html', images=image_paths, folder=folder)
+    return render_template('gallery.html', images=image_paths, folder=folder, pdfs=pdf_paths)
 
 
 @gallery.route('/procedures/<folder>/<filename>')
@@ -91,7 +92,11 @@ def serve_media(folder, filename):
     """Devuelve el archivo multimedia (jpg o mp4) directamente"""
     encrypted_filename = filename if filename.endswith('.enc') else filename + '.enc'
 
+    if filename.endswith('.pdf'):
+        encrypted_filename = filename
     file_path = os.path.join(IMAGE_BASE_FOLDER, folder, encrypted_filename)
+
+    print(f"[DEBUG] Buscando archivo en: {file_path}")
 
     if not os.path.exists(file_path):
         abort(404, description="Archivo no encontrado")
@@ -101,6 +106,8 @@ def serve_media(folder, filename):
         mimetype = 'image/jpeg'
     elif filename.lower().endswith('.mp4'):
         mimetype = 'video/mp4'
+    elif filename.lower().endswith('.pdf'):
+        mimetype = 'application/pdf'
     else:
         mimetype = 'application/octet-stream'
 
@@ -125,6 +132,10 @@ def serve_media(folder, filename):
             abort(500, description="Error al procesar el archivo")
     else:
         # Si no está encriptado, servirlo directamente (modo compatibilidad)
+        if filename.endswith('.pdf'):
+            # Si es una imagen, servirla directamente
+            mimetype = 'application/pdf'
+            return send_file(file_path, mimetype=mimetype)
         return send_file(file_path, mimetype=mimetype)
 
 @gallery.route('/folders', methods=['GET'])
@@ -159,11 +170,13 @@ def get_images_json(folder):
     # Filtra las imágenes y videos encriptados (mostrar nombres sin .enc)
     image_files = [img.replace('.enc', '') for img in os.listdir(folder_path) if img.endswith('.jpg.enc')]
     video_files = [vid.replace('.enc', '') for vid in os.listdir(folder_path) if vid.endswith('.mp4.enc')]
+    pdf_files = [pdf for pdf in os.listdir(folder_path) if pdf.endswith('.pdf')]
 
     return jsonify({
         "folder": folder,
         "images": image_files,
-        "videos": video_files
+        "videos": video_files,
+        "pdfs": pdf_files
     })
     
 @gallery.route('/take-photo', methods=['GET']) 
