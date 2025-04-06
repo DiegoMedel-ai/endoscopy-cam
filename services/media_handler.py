@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import queue
 import eventlet
+import subprocess
 
 load_dotenv()
 
@@ -12,11 +13,9 @@ def find_capture_device():
     for i in range(4):
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
-            print(f"Dispositivo de video encontrado en /dev/video{i}")
+            print(f"✅ Dispositivo de video encontrado en /dev/video{i}")
             return cap
-    raise RuntimeError("No se encontró una capturadora de video disponible.")
-
-cap = find_capture_device()
+    raise RuntimeError("❌ No se encontró una capturadora de video disponible.")
 
 class MediaHandler:
     def __init__(self, base_folder):
@@ -24,55 +23,46 @@ class MediaHandler:
         self.session_folder = None
         self.latest_frame = None
 
+        # Inicializar cámara
+        self.cap = find_capture_device()
+
         # Cola para streaming (limitada) y para grabación (sin límite)
         self.stream_queue = queue.Queue(maxsize=10)
-        self.record_queue = queue.Queue()  # Cola sin límite
+        self.record_queue = queue.Queue()
 
-        # Obtener la clave de cifrado desde las variables de entorno
+        # Clave secreta desde .env
         self.secret_key = os.getenv("SECRET_KEY")
+        if not self.secret_key:
+            raise ValueError("❌ SECRET_KEY no está definida en el entorno.")
         self.cipher = Fernet(self.secret_key.encode())
 
     def start_session(self):
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         self.session_folder = os.path.join(self.base_folder, timestamp)
         os.makedirs(self.session_folder, exist_ok=True)
-        print("✅ Carpeta de sesión creada:", self.session_folder, flush=True)
+        print("📁 Carpeta de sesión creada:", self.session_folder, flush=True)
 
     def capture_frames(self):
-        """
-        Abre la cámara y lee frames continuamente.
-        Cada frame se duplica en dos colas:
-          - self.stream_queue para streaming (limitada).
-          - self.record_queue para grabación (sin límite).
-        """
         print("🎥 Iniciando captura de frames...", flush=True)
-        if not cap.isOpened():
+        if not self.cap.isOpened():
             print("❌ No se pudo abrir la cámara en capture_frames", flush=True)
             return
 
         while True:
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if not ret:
                 continue
 
-            # Para streaming: si la cola está llena, descarta el frame más antiguo
             if self.stream_queue.full():
-                _ = self.stream_queue.get()
-                # print("🗑️ Se descartó un frame en stream_queue", flush=True)
+                self.stream_queue.get()
             self.stream_queue.put(frame)
-            # print("Frame agregado a stream_queue, tamaño:", self.stream_queue.qsize(), flush=True)
 
-            # Para grabación: usa una cola sin límite para conservar todos los frames
             self.record_queue.put(frame)
-            self.latest_frame = frame.copy()  # Mantener una copia del último frame
+            self.latest_frame = frame.copy()
 
             eventlet.sleep(0.01)
-        # cap.release()  # No se alcanza porque el bucle es infinito
 
     def generate(self):
-        """
-        Endpoint de streaming: extrae frames de la cola de streaming y los entrega en formato JPEG.
-        """
         while True:
             if not self.stream_queue.empty():
                 frame = self.stream_queue.get()
@@ -85,102 +75,113 @@ class MediaHandler:
                 eventlet.sleep(0.01)
 
     def record_video(self, recording_flag):
-        """
-        Consume frames de la cola de grabación mientras recording_flag esté activo,
-        graba el video, lo cifra y lo guarda.
-        """
-        print("📹 Entrando a record_video()", flush=True)
+        print("📹 Iniciando grabación con FFmpeg...", flush=True)
+        process = None
         try:
             if self.session_folder is None:
-                raise ValueError("La sesión no ha sido iniciada. Llama a start_session() antes de grabar video.")
-            
-            print("📁 Carpeta de sesión:", self.session_folder, flush=True)
-            
-            video_filename = f"video_{time.strftime('%Y%m%d-%H%M%S')}.avi"
+                raise ValueError("Sesión no iniciada")
+
+            video_filename = f"video_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
             video_path = os.path.join(self.session_folder, video_filename)
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            video_writer = cv2.VideoWriter(video_path, fourcc, 20.0, (640, 480))
-            
+            width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            resolution = f"{width}x{height}"
+            print(f"🎯 Resolución detectada: {width}x{height}", flush=True)
+            command = [
+                'ffmpeg',
+                '-y',
+                '-f', 'rawvideo',
+                '-vcodec', 'rawvideo',
+                '-s', resolution,
+                '-pix_fmt', 'bgr24',
+                '-r', '24',
+                '-i', '-',
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-pix_fmt', 'yuv420p',
+                '-profile:v', 'baseline',
+                '-movflags', '+faststart',
+                '-f', 'mp4',
+                video_path
+            ]
+
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=10**8
+            )
+
             frame_count = 0
-            print("⏺️ Iniciando grabación desde record_queue...", flush=True)
+            last_update = time.time()
 
             while recording_flag.is_set():
                 if not self.record_queue.empty():
                     frame = self.record_queue.get()
-                    video_writer.write(frame)
-                    frame_count += 1
-                    if frame_count % 30 == 0:
-                        print(f"🎞️ Grabando... frame {frame_count}", flush=True)
+                    try:
+                        process.stdin.write(frame.tobytes())
+                        frame_count += 1
+
+                        if time.time() - last_update > 1.0:
+                            print(f"🎞️ Frames grabados: {frame_count}", flush=True)
+                            last_update = time.time()
+
+                    except BrokenPipeError:
+                        ffmpeg_error = process.stderr.read().decode('utf-8')
+                        print(f"❌ FFmpeg falló: {ffmpeg_error}", flush=True)
+                        raise RuntimeError(f"FFmpeg error: {ffmpeg_error}")
                 else:
-                    eventlet.sleep(0.01)  # Evita bloquear el CPU
+                    eventlet.sleep(0.01)
 
-            print(f"🛑 Deteniendo grabación... Frames grabados: {frame_count}", flush=True)
-            video_writer.release()
+            print(f"🛑 Finalizando grabación ({frame_count} frames)...", flush=True)
+            process.stdin.close()
+            stdout, stderr = process.communicate()
 
-            print("🔒 Cifrando video...", flush=True)
-            with open(video_path, "rb") as video_file:
-                encrypted_data = self.cipher.encrypt(video_file.read())
-            encrypted_video_path = f"{video_path}.enc"
-            with open(encrypted_video_path, "wb") as encrypted_file:
-                encrypted_file.write(encrypted_data)
-            os.remove(video_path)
+            if process.returncode != 0:
+                error_msg = stderr.decode('utf-8')
+                raise RuntimeError(f"❌ FFmpeg falló: {error_msg}")
 
-            print(f"✅ Video cifrado y guardado en: {encrypted_video_path}", flush=True)
-            return encrypted_video_path
+            if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+                raise RuntimeError("❌ El archivo de video no se creó correctamente")
+
+            print(f"✅ Video guardado: {video_path} ({os.path.getsize(video_path)/1024:.2f} KB)", flush=True)
+            return video_path
 
         except Exception as e:
-            print("❌ Error en record_video():", e, flush=True)
+            print(f"❌ Error en grabación: {str(e)}", flush=True)
+            if process and process.poll() is None:
+                process.kill()
+            raise
+        finally:
+            pass
 
     def save_snapshot(self, frame):
-        """
-        Guarda una imagen del frame proporcionado, la cifra y la guarda en la carpeta de sesión.
-        Retorna el nombre y la ruta del archivo encriptado.
-        """
         if self.session_folder is None:
             raise ValueError("La sesión no ha sido iniciada. Llama a start_session() primero.")
 
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         filename = f"snapshot_{timestamp}.jpg"
         path = os.path.join(self.session_folder, filename)
-
-        # Guardar imagen temporal
         cv2.imwrite(path, frame)
 
-        # Leer y cifrar la imagen
-        with open(path, "rb") as f:
+        return filename, path
+
+    def save_audio(self, audio_path):
+        if self.session_folder is None:
+            raise ValueError("La sesión no ha sido iniciada. Llama a start_session() primero.")
+
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"audio_{timestamp}.mp3"
+        output_path = os.path.join(self.session_folder, filename)
+        os.rename(audio_path, output_path)
+
+        with open(output_path, "rb") as f:
             encrypted_data = self.cipher.encrypt(f.read())
 
-        encrypted_path = f"{path}.enc"
+        encrypted_path = f"{output_path}.enc"
         with open(encrypted_path, "wb") as f:
             f.write(encrypted_data)
 
-        os.remove(path)  # Eliminar imagen original no cifrada
-
+        os.remove(output_path)
         return filename + ".enc", encrypted_path
-
-def save_audio(self, audio_path):
-    """
-    Cifra un archivo de audio y lo guarda en la carpeta de sesión.
-    Elimina el archivo original después de cifrarlo.
-    """
-    if self.session_folder is None:
-        raise ValueError("La sesión no ha sido iniciada. Llama a start_session() primero.")
-
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    filename = f"audio_{timestamp}.mp3"
-    output_path = os.path.join(self.session_folder, filename)
-
-    # Renombrar el archivo temporal al definitivo
-    os.rename(audio_path, output_path)
-
-    # Leer y cifrar el archivo de audio
-    with open(output_path, "rb") as f:
-        encrypted_data = self.cipher.encrypt(f.read())
-
-    encrypted_path = f"{output_path}.enc"
-    with open(encrypted_path, "wb") as f:
-        f.write(encrypted_data)
-
-    os.remove(output_path)  # Eliminar archivo original no cifrado
-
-    return filename + ".enc", encrypted_path

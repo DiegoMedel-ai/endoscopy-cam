@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, send_file, abort, jsonify
 import os
 import locale
 from datetime import datetime
-from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import io
 
@@ -13,11 +12,6 @@ gallery = Blueprint('gallery', __name__)
 
 # Ruta base de las imágenes
 IMAGE_BASE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
-
-# Obtener la clave de cifrado desde las variables de entorno
-SECRET_KEY = os.getenv("SECRET_KEY")
-
-cipher = Fernet(SECRET_KEY.encode())
 
 def traducir_fecha(fecha_numerica):
     try:
@@ -78,34 +72,32 @@ def gallery_view(folder):
     if not os.path.exists(folder_path):
         return f"La carpeta {folder} no existe.", 404
 
-    # Listar imágenes encriptadas dentro de la carpeta
-    image_files = [img for img in os.listdir(folder_path) if img.endswith('.jpg.enc')]
+    # Listar imágenes (ahora sin .enc)
+    image_files = [img for img in os.listdir(folder_path) if img.endswith('.jpg')]
 
-    # Crear rutas dinámicas para desencriptar y visualizar
+    # Crear rutas dinámicas para visualizar
     image_paths = [f"/procedures/{folder}/{img}" for img in image_files]
 
     return render_template('gallery.html', images=image_paths, folder=folder)
 
 
 @gallery.route('/procedures/<folder>/<filename>')
-def serve_encrypted_image(folder, filename):
-    """Desencripta y devuelve la imagen para que pueda visualizarse en la galería."""
+def serve_media(folder, filename):
+    """Devuelve el archivo multimedia (jpg o mp4) directamente"""
     file_path = os.path.join(IMAGE_BASE_FOLDER, folder, filename)
 
     if not os.path.exists(file_path):
-        abort(404, description="Imagen no encontrada")
+        abort(404, description="Archivo no encontrado")
 
-    try:
-        with open(file_path, "rb") as encrypted_file:
-            encrypted_data = encrypted_file.read()
+    # Determinar el tipo MIME según la extensión
+    if filename.lower().endswith('.jpg'):
+        mimetype = 'image/jpeg'
+    elif filename.lower().endswith('.mp4'):
+        mimetype = 'video/mp4'
+    else:
+        mimetype = 'application/octet-stream'
 
-        decrypted_data = cipher.decrypt(encrypted_data)
-
-        return send_file(io.BytesIO(decrypted_data), mimetype='image/jpeg')
-
-    except Exception as e:
-        print(f"Error al desencriptar {filename}: {e}")
-        abort(500, description="Error al procesar la imagen")
+    return send_file(file_path, mimetype=mimetype)
 
 @gallery.route('/folders', methods=['GET'])
 def get_folders():
@@ -136,13 +128,15 @@ def get_images_json(folder):
     if not os.path.exists(folder_path):
         return jsonify({"error": f"La carpeta {folder} no existe."}), 404
 
-    image_files = [img for img in os.listdir(folder_path) if img.endswith('.jpg.enc')]
+    # Filtra las imágenes y videos
+    image_files = [img for img in os.listdir(folder_path) if img.endswith('.jpg')]
+    video_files = [vid for vid in os.listdir(folder_path) if vid.endswith('.mp4')]
 
     return jsonify({
         "folder": folder,
-        "images": image_files
+        "images": image_files,
+        "videos": video_files
     })
-
     
 @gallery.route('/take-photo')
 def take_last_photo():
@@ -159,25 +153,21 @@ def take_last_photo():
         latest_folder = folders[0]
         folder_path = os.path.join(IMAGE_BASE_FOLDER, latest_folder)
 
-        # Obtener la imagen más reciente .jpg.enc
-        encrypted_images = sorted([
+        # Obtener la imagen más reciente .jpg
+        images = sorted([
             f for f in os.listdir(folder_path)
-            if f.endswith('.jpg.enc')
+            if f.endswith('.jpg')
         ], reverse=True)
 
-        if not encrypted_images:
-            return jsonify({"error": "No hay imágenes cifradas en la carpeta"}), 404
+        if not images:
+            return jsonify({"error": "No hay imágenes en la carpeta"}), 404
 
-        latest_image = encrypted_images[0]
-        encrypted_path = os.path.join(folder_path, latest_image)
+        latest_image = images[0]
+        image_path = os.path.join(folder_path, latest_image)
 
-        with open(encrypted_path, "rb") as file:
-            encrypted_data = file.read()
-
-        decrypted_data = cipher.decrypt(encrypted_data)
-
-        return send_file(io.BytesIO(decrypted_data), mimetype='image/jpeg')
+        return send_file(image_path, mimetype='image/jpeg')
 
     except Exception as e:
         print(f"Error al obtener la última imagen: {e}")
         return jsonify({"error": str(e)}), 500
+    

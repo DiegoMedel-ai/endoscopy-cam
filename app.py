@@ -20,7 +20,7 @@ from threading import Lock
 from services.media_handler import MediaHandler
 from datetime import datetime
 
-# socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*")
 # model = whisper.load_model("base")  # O "tiny" si estás en hardware limitado
 PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
 media_handler = MediaHandler(PROCEDURE_FOLDER)

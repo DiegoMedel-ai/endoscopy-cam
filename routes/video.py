@@ -44,9 +44,6 @@ def capture():
         print("❌ Error al capturar imagen:", e)
         return jsonify({"message": "Error interno al capturar imagen"}), 500
 
-
-
-
 @video.route('/start_recording', methods=['POST'])
 def start_recording():
     print("✅ Entrando a start_recording", flush=True)
@@ -68,23 +65,30 @@ def start_recording():
 def stop_recording():
     if recording_flag.is_set():
         recording_flag.clear()
+        time.sleep(0.5)  # Pequeña espera para asegurar el cierre
 
         # Guardar transcripción si existe
         if transcription_log:
             try:
-                session_folder = media_handler.session_folder  # Asume que guardaste la carpeta ahí
+                session_folder = media_handler.session_folder
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 txt_path = os.path.join(session_folder, f"transcripcion_{timestamp}.txt")
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write('\n'.join(transcription_log))
                 print(f"📝 Transcripción guardada en: {txt_path}")
-                transcription_log.clear()  # Limpieza
+                transcription_log.clear()
             except Exception as e:
                 print("❌ Error al guardar transcripción:", e)
 
-        return jsonify({"message": "Grabación detenida."})
+        return jsonify({
+            "message": "Grabación detenida",
+            "status": "success"
+        })
 
-    return jsonify({"message": "No hay grabación en curso."})
+    return jsonify({
+        "message": "No hay grabación en curso",
+        "status": "info"
+    })
 
 @video.route('/shutdown', methods=['POST'])
 def shutdown():
