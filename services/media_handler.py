@@ -77,16 +77,26 @@ class MediaHandler:
     def record_video(self, recording_flag):
         print("📹 Iniciando grabación con FFmpeg...", flush=True)
         process = None
+        video_path = None  # Mover la definición aquí para poder acceder en el finally
+        
         try:
             if self.session_folder is None:
                 raise ValueError("Sesión no iniciada")
 
-            video_filename = f"video_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+            # Generar nombre de archivo único con timestamp preciso
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            video_filename = f"video_{timestamp}.mp4"
             video_path = os.path.join(self.session_folder, video_filename)
+            
+            # Verificar y eliminar archivo existente (por si acaso)
+            if os.path.exists(video_path):
+                os.remove(video_path)
+
             width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             resolution = f"{width}x{height}"
             print(f"🎯 Resolución detectada: {width}x{height}", flush=True)
+            
             command = [
                 'ffmpeg',
                 '-y',
@@ -101,8 +111,7 @@ class MediaHandler:
                 '-pix_fmt', 'yuv420p',
                 '-profile:v', 'baseline',
                 '-movflags', '+faststart',
-                '-f', 'mp4',
-                video_path
+                video_path  # Eliminamos '-f', 'mp4' ya que el formato se deduce de la extensión
             ]
 
             process = subprocess.Popen(
@@ -135,26 +144,58 @@ class MediaHandler:
                     eventlet.sleep(0.01)
 
             print(f"🛑 Finalizando grabación ({frame_count} frames)...", flush=True)
-            process.stdin.close()
-            stdout, stderr = process.communicate()
+            
+            # 1. Cerrar stdin primero
+            try:
+                process.stdin.close()
+            except Exception as e:
+                print(f"⚠️ Error cerrando stdin: {str(e)}", flush=True)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode('utf-8')
-                raise RuntimeError(f"❌ FFmpeg falló: {error_msg}")
+            # 2. Esperar con timeout más generoso
+            try:
+                _, stderr = process.communicate(timeout=10)  # Aumentamos a 10 segundos
+                if process.returncode != 0:
+                    error_msg = stderr.decode('utf-8') if stderr else "Sin mensaje de error"
+                    print(f"⚠️ FFmpeg terminó con código {process.returncode}: {error_msg}", flush=True)
+            except subprocess.TimeoutExpired:
+                print("⚠️ FFmpeg no terminó en 10 segundos, forzando cierre...", flush=True)
+                process.kill()
+                try:
+                    process.communicate(timeout=2)  # Limpiar después de kill
+                except:
+                    pass
 
-            if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
-                raise RuntimeError("❌ El archivo de video no se creó correctamente")
+            # Verificar el archivo resultante
+            if not os.path.exists(video_path):
+                raise RuntimeError("❌ El archivo de video no se creó")
+                
+            file_size = os.path.getsize(video_path)
+            if file_size == 0:
+                os.remove(video_path)
+                raise RuntimeError("❌ El archivo de video está vacío")
 
-            print(f"✅ Video guardado: {video_path} ({os.path.getsize(video_path)/1024:.2f} KB)", flush=True)
+            print(f"✅ Video guardado: {video_path} ({file_size/1024:.2f} KB)", flush=True)
             return video_path
 
         except Exception as e:
             print(f"❌ Error en grabación: {str(e)}", flush=True)
-            if process and process.poll() is None:
-                process.kill()
+            # Eliminar archivo corrupto si existe
+            if video_path and os.path.exists(video_path):
+                try:
+                    os.remove(video_path)
+                    print(f"🗑️ Archivo corrupto eliminado: {video_path}", flush=True)
+                except:
+                    pass
             raise
         finally:
-            pass
+            # Limpieza garantizada
+            if process:
+                try:
+                    process.stdin.close() if process.stdin else None
+                    process.stdout.close() if process.stdout else None
+                    process.stderr.close() if process.stderr else None
+                except:
+                    pass
 
     def save_snapshot(self, frame):
         if self.session_folder is None:

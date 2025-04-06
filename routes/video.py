@@ -47,38 +47,79 @@ def capture():
 @video.route('/start_recording', methods=['POST'])
 def start_recording():
     print("✅ Entrando a start_recording", flush=True)
-    if not recording_flag.is_set():
-        try:
-            print("🟢 Iniciando nueva sesión de grabación...", flush=True)
-            media_handler.start_session()
-            recording_flag.set()
-            video_thread = eventlet.spawn(media_handler.record_video, recording_flag)
-            print("🎥 Hilo de grabación lanzado correctamente", flush=True)
-            return jsonify({"message": "Grabación iniciada."})
-        except Exception as e:
-            print("❌ Error al iniciar grabación:", e, flush=True)
-            return jsonify({"error": str(e)}), 500
-    print("⚠️ Ya hay una grabación en curso", flush=True)
-    return jsonify({"message": "La grabación ya está en curso."})
+    
+    if recording_flag.is_set():
+        print("⚠️ Ya hay una grabación en curso", flush=True)
+        return jsonify({
+            "message": "La grabación ya está en curso.",
+            "status": "warning"
+        }), 409
+
+    try:
+        print("🟢 Iniciando nueva sesión de grabación...", flush=True)
+        
+        # 1. Limpieza previa
+        media_handler.record_queue.queue.clear()
+        
+        media_handler.start_session()  
+        
+        # 3. Verificar cámara
+        if not media_handler.cap or not media_handler.cap.isOpened():
+            raise RuntimeError("La cámara no está disponible")
+        
+        # 4. Iniciar grabación
+        recording_flag.set()
+        
+        # 5. Lanzar hilo de grabación
+        def safe_record():
+            try:
+                media_handler.record_video(recording_flag)
+            except Exception as e:
+                print(f"💥 Error en hilo de grabación: {str(e)}", flush=True)
+                recording_flag.clear()
+                raise
+
+        eventlet.spawn(safe_record)
+        
+        # Pequeña espera para verificar inicio
+        eventlet.sleep(0.1)
+        if not recording_flag.is_set():
+            raise RuntimeError("No se pudo iniciar la grabación")
+        
+        print("🎥 Grabación iniciada correctamente", flush=True)
+        return jsonify({
+            "message": "Grabación iniciada correctamente",
+            "status": "success"
+        })
+
+    except Exception as e:
+        recording_flag.clear()
+        print(f"❌ Error al iniciar grabación: {str(e)}", flush=True)
+        return jsonify({
+            "error": str(e),
+            "message": "No se pudo iniciar la grabación",
+            "status": "error"
+        }), 500
+    
 
 @video.route('/stop_recording', methods=['POST'])
 def stop_recording():
     if recording_flag.is_set():
         recording_flag.clear()
-        time.sleep(0.5)  # Pequeña espera para asegurar el cierre
+        time.sleep(1)  # Pequeña espera para asegurar el cierre
 
         # Guardar transcripción si existe
-        if transcription_log:
-            try:
-                session_folder = media_handler.session_folder
-                timestamp = time.strftime("%Y%m%d-%H%M%S")
-                txt_path = os.path.join(session_folder, f"transcripcion_{timestamp}.txt")
-                with open(txt_path, "w", encoding="utf-8") as f:
-                    f.write('\n'.join(transcription_log))
-                print(f"📝 Transcripción guardada en: {txt_path}")
-                transcription_log.clear()
-            except Exception as e:
-                print("❌ Error al guardar transcripción:", e)
+        # if transcription_log:
+        #     try:
+        #         session_folder = media_handler.session_folder
+        #         timestamp = time.strftime("%Y%m%d-%H%M%S")
+        #         txt_path = os.path.join(session_folder, f"transcripcion_{timestamp}.txt")
+        #         with open(txt_path, "w", encoding="utf-8") as f:
+        #             f.write('\n'.join(transcription_log))
+        #         print(f"📝 Transcripción guardada en: {txt_path}")
+        #         transcription_log.clear()
+        #     except Exception as e:
+        #         print("❌ Error al guardar transcripción:", e)
 
         return jsonify({
             "message": "Grabación detenida",
