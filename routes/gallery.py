@@ -1,9 +1,11 @@
-from flask import Blueprint, render_template, send_file, abort, jsonify 
+from flask import Blueprint, render_template, send_file, abort, jsonify, request
 import os
 import locale
 from datetime import datetime
 from dotenv import load_dotenv
 import io
+from xhtml2pdf import pisa
+from werkzeug.utils import secure_filename
 
 # Cargar variables de entorno
 load_dotenv()
@@ -170,4 +172,33 @@ def take_last_photo():
     except Exception as e:
         print(f"Error al obtener la última imagen: {e}")
         return jsonify({"error": str(e)}), 500
-    
+
+@gallery.route('/generar_pdf', methods=['POST'])
+def generar_pdf():
+    html_content = request.form.get('html')
+    session_folder = request.form.get('session_folder')
+    images = request.files.getlist('images')
+
+    if not html_content or not session_folder:
+        return jsonify({'error': 'Faltan parámetros requeridos'}), 400
+
+    image_paths = []
+    for img in images:
+        filename = secure_filename(img.filename)
+        img_path = os.path.join(IMAGE_BASE_FOLDER, session_folder, filename)
+        image_paths.append(img_path)
+
+    # Reemplazar referencias en el HTML
+    for img_path in image_paths:
+        filename = os.path.basename(img_path)
+        html_content = html_content.replace(f"src=\"{filename}\"", f"src=\"file://{img_path}\"")
+
+    pdf_path = os.path.join(IMAGE_BASE_FOLDER, session_folder, 'reporte.pdf')
+
+    with open(pdf_path, "wb") as pdf_file:
+        pisa_status = pisa.CreatePDF(html_content, dest=pdf_file)
+
+    if pisa_status.err:
+        return jsonify({'error': 'Error al generar el PDF'}), 500
+
+    return jsonify({'pdf_path': pdf_path}), 200

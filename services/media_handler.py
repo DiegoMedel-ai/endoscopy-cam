@@ -111,6 +111,7 @@ class MediaHandler:
                 '-pix_fmt', 'yuv420p',
                 '-profile:v', 'baseline',
                 '-movflags', '+faststart',
+                '-loglevel', 'error',
                 video_path  # Eliminamos '-f', 'mp4' ya que el formato se deduce de la extensión
             ]
 
@@ -118,7 +119,7 @@ class MediaHandler:
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 bufsize=10**8
             )
 
@@ -144,31 +145,40 @@ class MediaHandler:
                     eventlet.sleep(0.01)
 
             print(f"🛑 Finalizando grabación ({frame_count} frames)...", flush=True)
-            
+
             # 1. Cerrar stdin primero
             try:
+                print("⏳ Flusheando stdin...", flush=True)
+                process.stdin.flush()
+                print("⏳ Cerrando stdin...", flush=True)
                 process.stdin.close()
+
             except Exception as e:
                 print(f"⚠️ Error cerrando stdin: {str(e)}", flush=True)
 
-            # 2. Esperar con timeout más generoso
+            # 2. Esperar que FFmpeg termine (pero con visibilidad)
             try:
-                _, stderr = process.communicate(timeout=10)  # Aumentamos a 10 segundos
+                print("⏳ Esperando que FFmpeg termine...", flush=True)
+                stdout, stderr = process.communicate(timeout=10)
+                print(stdout.decode(errors='ignore'))
+                print(f"✅ FFmpeg terminó con código {process.returncode}", flush=True)
+                
                 if process.returncode != 0:
-                    error_msg = stderr.decode('utf-8') if stderr else "Sin mensaje de error"
-                    print(f"⚠️ FFmpeg terminó con código {process.returncode}: {error_msg}", flush=True)
+                    stderr_output = stderr.decode('utf-8', errors='ignore') if stderr else "(sin stderr)"
+                    print(f"⚠️ FFmpeg terminó con errores:\n{stderr_output}", flush=True)
             except subprocess.TimeoutExpired:
-                print("⚠️ FFmpeg no terminó en 10 segundos, forzando cierre...", flush=True)
+                print("⏰ FFmpeg no terminó en 10s, intentando terminarlo...", flush=True)
                 process.kill()
                 try:
-                    process.communicate(timeout=2)  # Limpiar después de kill
-                except:
-                    pass
+                    process.communicate(timeout=2)
+                except Exception as e:
+                    print(f"⚠️ Error al limpiar proceso FFmpeg: {e}", flush=True)
 
-            # Verificar el archivo resultante
+            # 3. Verificar si el archivo fue creado
+            print("📦 Verificando archivo de salida...", flush=True)
             if not os.path.exists(video_path):
                 raise RuntimeError("❌ El archivo de video no se creó")
-                
+
             file_size = os.path.getsize(video_path)
             if file_size == 0:
                 os.remove(video_path)
@@ -176,6 +186,7 @@ class MediaHandler:
 
             print(f"✅ Video guardado: {video_path} ({file_size/1024:.2f} KB)", flush=True)
             return video_path
+
 
         except Exception as e:
             print(f"❌ Error en grabación: {str(e)}", flush=True)
