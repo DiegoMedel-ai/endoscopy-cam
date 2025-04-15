@@ -1,10 +1,11 @@
+import eventlet
+eventlet.monkey_patch()
 import os
 import time
 import cv2
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import queue
-import eventlet
 import subprocess
 
 load_dotenv()

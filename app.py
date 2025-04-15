@@ -1,211 +1,119 @@
 import eventlet
 eventlet.monkey_patch()
-from flask import Flask, render_template, request, jsonify
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
-from routes.video import transcription_log  # Importa el log compartido
-
-from routes.video import video
-from routes.gallery import gallery
-from routes.audio import create_audio_blueprint
-from app_context import app
 
 import os
-import requests
-import base64
 import time
 import subprocess
-import whisper
-from threading import Lock
-from services.media_handler import MediaHandler
 from datetime import datetime
+from threading import Lock
 
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
+from flask_socketio import SocketIO
+
+from routes.gallery import gallery
+from routes.audio import create_audio_blueprint
+from routes.video import create_video_blueprint
+from services.media_handler import MediaHandler
+from app_context import app
+
+# ✅ Habilita CORS completo
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")
-# model = whisper.load_model("base")  # O "tiny" si estás en hardware limitado
+
+# ✅ Configuraciones
 PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
-media_handler = MediaHandler(PROCEDURE_FOLDER)
 TMP_FOLDER = os.path.join(os.getcwd(), "tmp")
 os.makedirs(TMP_FOLDER, exist_ok=True)
+
+media_handler = MediaHandler(PROCEDURE_FOLDER)
 audio_processing_lock = Lock()
 transcription_log = []
 
-app.register_blueprint(video, url_prefix='/video')
+# ✅ Blueprints
+audio_bp = create_audio_blueprint(media_handler, socketio)
+video_bp = create_video_blueprint(media_handler, socketio)
+
+app.register_blueprint(video_bp, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
-audio = create_audio_blueprint(PROCEDURE_FOLDER, media_handler)
-app.register_blueprint(audio, url_prefix='/audio')
+app.register_blueprint(audio_bp, url_prefix='/audio')
 
-CORS(app)
-CORS(app, resources={r"/gallery/*": {"origins": "*"}})
 
-def wait_until_file_stable(path, timeout=1.0, check_interval=0.1):
-    last_size = -1
-    start = time.time()
-    while time.time() - start < timeout:
-        if os.path.exists(path):
-            size = os.path.getsize(path)
-            if size == last_size:
-                return True
-            last_size = size
-        time.sleep(check_interval)
-    return False
+# ----------------------------------------------------------
+# FUNCIONES Y ENDPOINTS
+# ----------------------------------------------------------
 
-# @app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/upload_images', methods=['POST'])
+@app.route('/upload_images', methods=['POST', 'OPTIONS'])
 def upload_images():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
     data = request.get_json()
-    folder = data.get('folder') # nombre del procedimiento  
-    image_names = data.get('image_names', []) #nombres de las imgenes
+    folder = data.get('folder')
+    image_names = data.get('image_names', [])
 
     if not folder or not image_names:
-        return jsonify({"message": "El nombre del procedimiento y las imágenes son requeridas."}), 400
-    
-    folder_path = os.path.join(PROCEDURE_FOLDER, folder) 
+        return jsonify({"message": "Faltan datos."}), 400
 
+    folder_path = os.path.join(PROCEDURE_FOLDER, folder)
     if not os.path.exists(folder_path):
-        return jsonify({"message": "El procedimiento no existe."}), 404
+        return jsonify({"message": "La carpeta no existe."}), 404
 
     decrypted_images = []
-    
     for image_name in image_names:
-        encrypted_filepath = os.path.join(folder_path, image_name)
-        if not os.path.exists(encrypted_filepath):
-            return jsonify({"message": f"La imagen {image_name} no existe."}), 404
-        
+        path = os.path.join(folder_path, image_name)
+        if not os.path.exists(path):
+            return jsonify({"message": f"No existe {image_name}"}), 404
         try:
-            decrypted_data = media_handler.decrypt_file(encrypted_filepath)
+            data = media_handler.decrypt_file(path)
             clean_name = image_name.replace(".enc", "") if image_name.endswith(".enc") else image_name
-            decrypted_images.append((clean_name, decrypted_data))
+            decrypted_images.append((clean_name, data))
         except Exception as e:
-            print(f"Error al descifrar {image_name}: {e}")
-            return jsonify({"message": f"Error al procesar {image_name}"}), 500
-    
+            return jsonify({"message": f"Error con {image_name}: {e}"}), 500
+
     if not decrypted_images:
-        return jsonify({"message": "No se pudieron descifrar las imágenes."}), 404
+        return jsonify({"message": "No se pudo descifrar ninguna imagen."}), 400
 
     try:
-        # Preparamos los archivos para enviar
-        files = []
-        for image_name, image_data in decrypted_images:
-            files.append(('files', (image_name, image_data, 'image/jpeg')))
-
-        # Configuramos la URL y headers
+        files = [('files', (name, data, 'image/jpeg')) for name, data in decrypted_images]
         url = 'https://69c7-187-189-148-91.ngrok-free.app/api/public-upload'
-        headers = {
-            'Authorization': 'Bearer token-secreto-torre-medica',  # Reemplaza con tu token real
-        }
-
-        # Enviamos la solicitud
+        headers = {'Authorization': 'Bearer token-secreto-torre-medica'}
         response = requests.post(url, files=files, headers=headers)
         response.raise_for_status()
-        
-        return jsonify({
-            "message": "Las imágenes han sido enviadas exitosamente.",
-            "response": response.json()
-        }), 200
+        return jsonify({"message": "Imágenes enviadas", "response": response.json()}), 200
+    except requests.RequestException as e:
+        return jsonify({"message": "Error al enviar", "error": str(e)}), 500
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error al enviar las imágenes: {e}")
-        return jsonify({
-            "message": "Error al enviar las imágenes al servidor remoto.",
-            "error": str(e)
-        }), 500
-        
 
-@app.route('/upload_audio', methods=['POST'])
+@app.route('/upload_audio', methods=['POST', 'OPTIONS'])
 def upload_audio():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
     file = request.files.get('audio_file')
     if not file:
         return 'No audio file received', 400
 
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    base_filename = f"audio_{timestamp}"
-    webm_path = os.path.join('AUDIO_OUTPUT', base_filename + '.webm')
-    mp3_path = os.path.join('AUDIO_OUTPUT', base_filename + '.mp3')
+    base = f"audio_{timestamp}"
+    webm_path = os.path.join('AUDIO_OUTPUT', base + '.webm')
+    mp3_path = os.path.join('AUDIO_OUTPUT', base + '.mp3')
 
     os.makedirs('AUDIO_OUTPUT', exist_ok=True)
     file.save(webm_path)
-    print(f"✅ Audio .webm guardado en: {webm_path}")
 
-    # Convertir a mp3 usando FFmpeg
     try:
         subprocess.run([
-            'ffmpeg',
-            '-i', webm_path,
-            '-vn',  # no video
-            '-acodec', 'libmp3lame',
-            '-q:a', '2',  # calidad buena
-            mp3_path
+            'ffmpeg', '-i', webm_path, '-vn',
+            '-acodec', 'libmp3lame', '-q:a', '2', mp3_path
         ], check=True)
-        print(f"🎧 Audio convertido exitosamente a MP3: {mp3_path}")
+        return 'Audio convertido a MP3', 200
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error al convertir audio: {e}")
-        return 'Error converting to MP3', 500
-
-    return 'Audio saved and converted to MP3', 200
-
-# @socketio.on('connect')
-# def handle_connect():
-#     print("🟢 Cliente conectado vía WebSocket")
-
-# @socketio.on('audio_chunk')
-# def handle_audio_chunk(data):
-#     webm_path = None
-#     wav_path = None
-
-#     try:
-#         print("🔄 Recibiendo audio...")
-#         audio_base64 = data['audio'].split(',')[1]
-#         audio_bytes = base64.b64decode(audio_base64)
-#         print("Longitud de audio_bytes:", len(audio_bytes))
-
-#         timestamp = int(time.time() * 1000)
-#         webm_path = os.path.join('tmp', f"audio_{timestamp}.webm")
-#         with open(webm_path, 'wb') as f:
-#             f.write(audio_bytes)
-
-#         time.sleep(0.1)  # ⚠️ Esperar más tiempo ayuda
-
-#         if not os.path.exists(webm_path) or os.path.getsize(webm_path) < 10000:
-#             print(f"⚠️ Archivo {webm_path} inválido o muy pequeño. Se omitirá.")
-#             return
-
-#         print("Archivo temporal creado:", webm_path)
-
-#         # Convertir a WAV (usando ffmpeg)
-#         wav_path = webm_path.replace('.webm', '.wav')
-#         command = ['ffmpeg', '-loglevel', 'quiet', '-y', '-i', webm_path, '-ac', '1', '-ar', '16000', wav_path]
-#         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-#         if result.returncode != 0:
-#             print("❌ Error al convertir con ffmpeg:", result.stderr.decode())
-#             return
-
-#         print("✅ Conversión exitosa:", wav_path)
-
-#         print("🎧 Transcribiendo...")
-#         result = model.transcribe(wav_path, language="es")
-#         text = result['text'].strip()
-#         print("✅ Transcripción obtenida:", text)
-
-#         if text:
-#             emit('transcription', {'text': text})
-#             transcription_log.append(text)
-
-#     except Exception as e:
-#         print("❌ Error al procesar audio:", e)
-
-#     finally:
-#         for path in [webm_path, wav_path]:
-#             if path and os.path.exists(path):
-#                 os.remove(path)
-#                 print(f"🪩 Archivo temporal eliminado: {path}")
+        return f'Error al convertir audio: {e}', 500
 
 
-
-
+# ----------------------------------------------------------
+# MAIN APP
+# ----------------------------------------------------------
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
-

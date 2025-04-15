@@ -1,71 +1,106 @@
-from flask import Blueprint, request, jsonify
 import os
-import base64
 import time
+import threading
+import wave
+import pyaudio
+import whisper
+from flask import Blueprint, jsonify, request, make_response
+from flask_socketio import emit  # Para emitir eventos
 from dotenv import load_dotenv
-import subprocess
 
 load_dotenv()
 
-def create_audio_blueprint(procedure_folder, media_handler):
-    audio = Blueprint('audio', __name__)
+# Flag global para controlar la grabación de audio
+recording_audio_flag = threading.Event()
 
-    # Variables globales accesibles en las rutas
-    global PROCEDURE_FOLDER
-    global handler
-    PROCEDURE_FOLDER = procedure_folder
-    handler = media_handler
+def create_audio_blueprint(handler, socketio):
+    audioRoute = Blueprint('audio', __name__)
 
-    @audio.route('/upload', methods=['POST'])
-    def upload_audio():
-        try:
-            data = request.json
-            base64_audio = data.get("audio")
+    # Parámetros para grabación con PyAudio
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 16000
+    CHUNK = 1024
+    RECORD_SECONDS = 2
 
-            if not base64_audio:
-                return jsonify({"error": "No se recibió audio"}), 400
+    def record_chunk():
+        pa = pyaudio.PyAudio()
+        stream = pa.open(format=FORMAT,
+                         channels=CHANNELS,
+                         rate=RATE,
+                         input=True,
+                         frames_per_buffer=CHUNK)
+        frames = []
+        print("🎤 Micrófono abierto correctamente")
+        for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+            data = stream.read(CHUNK)
+            frames.append(data)
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
+        return frames
 
-            if handler.session_folder is None:
-                return jsonify({"error": "No hay sesión activa"}), 400
+    def save_wav(frames, filename):
+        pa = pyaudio.PyAudio()
+        wf = wave.open(filename, 'wb')
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(pa.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+        pa.terminate()
 
-            # Eliminar encabezado del base64 si lo tiene
-            if "," in base64_audio:
-                base64_audio = base64_audio.split(",")[1]
+    @audioRoute.route('/record', methods=['POST', 'OPTIONS'])
+    def start_recording():
+        print("📡 POST recibido en /audio/record")
 
-            audio_bytes = base64.b64decode(base64_audio)
+        if request.method == 'OPTIONS':
+            print("🔁 OPTIONS recibido en /audio/record")
+            response = jsonify({})
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return response
 
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            raw_webm_path = os.path.join(handler.session_folder, f"audio_{timestamp}.webm")
-            mp3_path = os.path.join(handler.session_folder, f"audio_{timestamp}.mp3")
-            encrypted_path = f"{mp3_path}.enc"
+        if handler.session_folder is None:
+            print("❌ No hay sesión activa en handler")
+            return jsonify({"error": "No hay sesión activa"}), 400
 
-            with open(raw_webm_path, "wb") as f:
-                f.write(audio_bytes)
+        recording_audio_flag.set()
 
-            # Convertir a mp3 usando FFmpeg
-            result = subprocess.run([
-                "ffmpeg", "-y", "-i", raw_webm_path, "-vn", "-acodec", "libmp3lame", mp3_path
-            ], capture_output=True, text=True)
+        def record_loop():
+            print("🎙️ Intentando abrir micrófono con PyAudio...")
+            model = whisper.load_model("tiny")
+            print("🟢 Iniciando hilo de grabación y transcripción de audio...")
+            while recording_audio_flag.is_set():
+                try:
+                    frames = record_chunk()
+                    print(f"✅ Audio capturado: {len(frames)} frames")
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    temp_wav = os.path.join(handler.session_folder, f"temp_audio_{timestamp}.wav")
+                    save_wav(frames, temp_wav)
+                    print(f"💾 Audio guardado: {temp_wav}")
 
-            if result.returncode != 0:
-                print("❌ Error de FFmpeg:", result.stderr)
-                return jsonify({"error": "Error al convertir a MP3"}), 500
+                    result = model.transcribe(temp_wav, language="es")
+                    transcription = result.get("text", "").strip()
+                    print("📝 Transcripción:", transcription)
 
-            # Cifrar archivo MP3
-            with open(mp3_path, "rb") as f:
-                encrypted_data = handler.cipher.encrypt(f.read())
-            with open(encrypted_path, "wb") as f:
-                f.write(encrypted_data)
+                    socketio.emit('transcription', {'text': transcription})
+                    os.remove(temp_wav)
+                except Exception as e:
+                    print("❌ Error en record_loop:", e)
+                    break
+            print("🛑 Hilo de grabación finalizado")
 
-            # Eliminar temporales
-            os.remove(mp3_path)
-            os.remove(raw_webm_path)
+        threading.Thread(target=record_loop, daemon=True).start()
+        return jsonify({"message": "Grabación de audio iniciada y transcripción activada."})
 
-            print(f"✅ Audio guardado en: {encrypted_path}")
-            return jsonify({"message": "Audio recibido y guardado exitosamente", "path": encrypted_path})
 
-        except Exception as e:
-            print("❌ Error al procesar audio:", e)
-            return jsonify({"error": str(e)}), 500
+    @audioRoute.route('/stop_recording', methods=['POST', 'OPTIONS'])
+    def stop_audio_recording():
+        recording_audio_flag.clear()
+        print("🔇 Grabación de audio detenida")
+        return jsonify({"message": "Grabación de audio detenida"})
 
-    return audio
+    return audioRoute
+
