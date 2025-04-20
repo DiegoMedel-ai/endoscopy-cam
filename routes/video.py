@@ -30,11 +30,24 @@ def create_video_blueprint(handler, socketio):
                 return jsonify({"message": "Aún no hay frames disponibles para capturar"}), 500
 
             filename, filepath = handler.save_snapshot(frame)
-            print("📸 Imagen guardada como", filename)
-            return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
+
+            # Obtener la carpeta de la foto
+            folder = os.path.basename(os.path.dirname(filepath))
+
+            print(f"📸 Imagen guardada como {filename} en la carpeta {folder}")
+
+            # Devolver nombre de la carpeta y el archivo
+            return jsonify({
+                "message": f"Imagen guardada como {filename}",
+                "path": filepath,
+                "folder": folder,
+                "filename": filename
+            })
+
         except Exception as e:
             print("❌ Error al capturar imagen:", e)
             return jsonify({"message": "Error interno al capturar imagen"}), 500
+        
 
     @video.route('/start_recording', methods=['POST', 'OPTIONS'])
     def start_recording():
