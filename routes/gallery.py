@@ -140,7 +140,7 @@ def get_images_json(folder):
         "videos": video_files
     })
     
-@gallery.route('/take-photo')
+@gallery.route('/take-photo', methods=['GET']) 
 def take_last_photo():
     try:
         # Obtener la carpeta más reciente por fecha
@@ -167,10 +167,17 @@ def take_last_photo():
         latest_image = images[0]
         image_path = os.path.join(folder_path, latest_image)
 
-        return send_file(image_path, mimetype='image/jpeg')
+        # Devolver tanto la imagen como los metadatos
+
+        print(f"[INFO] Foto capturada: carpeta = {latest_folder}, archivo = {latest_image}")
+
+        response = send_file(image_path, mimetype='image/jpeg')
+        response.headers['X-Folder-Name'] = latest_folder
+        response.headers['X-File-Name'] = latest_image
+        response.headers['Access-Control-Expose-Headers'] = 'X-Folder-Name, X-File-Name'
+        return response
 
     except Exception as e:
-        print(f"Error al obtener la última imagen: {e}")
         return jsonify({"error": str(e)}), 500
 
 @gallery.route('/generar_pdf', methods=['POST'])
@@ -202,3 +209,35 @@ def generar_pdf():
         return jsonify({'error': 'Error al generar el PDF'}), 500
 
     return jsonify({'pdf_path': pdf_path}), 200
+
+@gallery.route('/delete-image', methods=['DELETE'])
+def delete_image():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No se recibieron datos"}), 400
+
+        folder = data.get('folder')
+        filename = data.get('filename')
+        
+        if not folder or not filename:
+            return jsonify({"error": "Faltan parámetros folder o filename"}), 400
+
+        # Prevenir directory traversal
+        if '../' in folder or '../' in filename:
+            return jsonify({"error": "Ruta no permitida"}), 400
+
+        file_path = os.path.join(IMAGE_BASE_FOLDER, folder, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({"error": "Archivo no encontrado"}), 404
+
+        os.remove(file_path)
+        return jsonify({
+            "success": True,
+            "message": f"Imagen {filename} eliminada",
+            "deleted_path": file_path
+        })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
