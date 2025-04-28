@@ -1,106 +1,60 @@
 import os
-import time
-import threading
-import wave
-import pyaudio
-import whisper
-from flask import Blueprint, jsonify, request, make_response
-from flask_socketio import emit  # Para emitir eventos
+from flask import Blueprint, jsonify
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Flag global para controlar la grabación de audio
-recording_audio_flag = threading.Event()
+def create_audio_blueprint(handler):
+    audio = Blueprint('audio', __name__)
 
-def create_audio_blueprint(handler, socketio):
-    audioRoute = Blueprint('audio', __name__)
+    @audio.route('/audio/start', methods=['POST'])
+    def start_audio():
+        print("📡 Entrando a /audio/start", flush=True)
+        try:
+            if handler.session_folder is None:
+                print("📂 No hay sesión activa, creando nueva sesión...", flush=True)
+                handler.start_session()
+                print("📂 Carpeta de sesión creada", flush=True)
 
-    # Parámetros para grabación con PyAudio
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 16000
-    CHUNK = 1024
-    RECORD_SECONDS = 2
+            print("🎙️ Iniciando grabación de audio...", flush=True)
+            handler.start_audio_recording()
+            print("✅ Grabación de audio iniciada correctamente", flush=True)
 
-    def record_chunk():
-        pa = pyaudio.PyAudio()
-        stream = pa.open(format=FORMAT,
-                         channels=CHANNELS,
-                         rate=RATE,
-                         input=True,
-                         frames_per_buffer=CHUNK)
-        frames = []
-        print("🎤 Micrófono abierto correctamente")
-        for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-            data = stream.read(CHUNK)
-            frames.append(data)
-        stream.stop_stream()
-        stream.close()
-        pa.terminate()
-        return frames
+            return jsonify({"message": "Grabación de audio iniciada", "status": "success"})
 
-    def save_wav(frames, filename):
-        pa = pyaudio.PyAudio()
-        wf = wave.open(filename, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(pa.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-        pa.terminate()
-
-    @audioRoute.route('/record', methods=['POST', 'OPTIONS'])
-    def start_recording():
-        print("📡 POST recibido en /audio/record")
-
-        if request.method == 'OPTIONS':
-            print("🔁 OPTIONS recibido en /audio/record")
-            response = jsonify({})
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-            return response
-
-        if handler.session_folder is None:
-            print("❌ No hay sesión activa en handler")
-            return jsonify({"error": "No hay sesión activa"}), 400
-
-        recording_audio_flag.set()
-
-        def record_loop():
-            print("🎙️ Intentando abrir micrófono con PyAudio...")
-            model = whisper.load_model("tiny")
-            print("🟢 Iniciando hilo de grabación y transcripción de audio...")
-            while recording_audio_flag.is_set():
-                try:
-                    frames = record_chunk()
-                    print(f"✅ Audio capturado: {len(frames)} frames")
-                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                    temp_wav = os.path.join(handler.session_folder, f"temp_audio_{timestamp}.wav")
-                    save_wav(frames, temp_wav)
-                    print(f"💾 Audio guardado: {temp_wav}")
-
-                    result = model.transcribe(temp_wav, language="es")
-                    transcription = result.get("text", "").strip()
-                    print("📝 Transcripción:", transcription)
-
-                    socketio.emit('transcription', {'text': transcription})
-                    os.remove(temp_wav)
-                except Exception as e:
-                    print("❌ Error en record_loop:", e)
-                    break
-            print("🛑 Hilo de grabación finalizado")
-
-        threading.Thread(target=record_loop, daemon=True).start()
-        return jsonify({"message": "Grabación de audio iniciada y transcripción activada."})
+        except Exception as e:
+            print(f"❌ Error al iniciar grabación de audio: {e}", flush=True)
+            return jsonify({"error": str(e), "status": "error"}), 500
 
 
-    @audioRoute.route('/stop_recording', methods=['POST', 'OPTIONS'])
-    def stop_audio_recording():
-        recording_audio_flag.clear()
-        print("🔇 Grabación de audio detenida")
-        return jsonify({"message": "Grabación de audio detenida"})
+    @audio.route('/audio/stop', methods=['POST'])
+    def stop_audio():
+        print("📡 Entrando a /audio/stop", flush=True)
+        try:
+            print("🛑 Deteniendo grabación de audio...", flush=True)
+            handler.stop_audio_recording()
+            print("✅ Grabación de audio detenida correctamente", flush=True)
 
-    return audioRoute
+            return jsonify({"message": "Grabación de audio detenida", "status": "success"})
 
+        except Exception as e:
+            print(f"❌ Error al detener grabación de audio: {e}", flush=True)
+            return jsonify({"error": str(e), "status": "error"}), 500
+
+
+    @audio.route('/audio/transcribe', methods=['GET'])
+    def transcribe_audio():
+        print("📡 Entrando a /audio/transcribe", flush=True)
+        try:
+            print("🧠 Transcribiendo audio...", flush=True)
+            text = handler.transcribe_audio()
+            print("✅ Transcripción completa obtenida", flush=True)
+
+            return jsonify({"transcription": text, "status": "success"})
+
+        except Exception as e:
+            print(f"❌ Error al transcribir audio: {e}", flush=True)
+            return jsonify({"error": str(e), "status": "error"}), 500
+
+
+    return audio

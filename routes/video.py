@@ -1,119 +1,77 @@
-import eventlet
-eventlet.monkey_patch()
-
 import os
 import threading
 import time
-import requests
 from flask import Blueprint, jsonify, Response, request
 from dotenv import load_dotenv
 
-recording_flag = threading.Event()
 load_dotenv()
-environment = os.getenv("environment", "dev")
+recording_flag = threading.Event()
 
-def create_video_blueprint(handler, socketio):
+import threading, time
+from flask import Blueprint, jsonify, Response
+# ya no necesitas eventlet aquí
+
+def create_video_blueprint(handler):
     video = Blueprint('video', __name__)
 
-    # Inicia la captura de frames en segundo plano
-    eventlet.spawn(handler.capture_frames)
+    # 1) Captura de frames en hilo real
+    threading.Thread(target=handler.capture_frames, daemon=True).start()
 
     @video.route('/video_feed')
     def video_feed():
-        return Response(handler.generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+        return Response(handler.generate(),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    @video.route('/capture', methods=['POST'])
-    def capture():
-        try:
-            frame = handler.latest_frame
-            if frame is None:
-                return jsonify({"message": "Aún no hay frames disponibles para capturar"}), 500
-
-            filename, filepath = handler.save_snapshot(frame)
-            print("📸 Imagen guardada como", filename)
-            return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
-        except Exception as e:
-            print("❌ Error al capturar imagen:", e)
-            return jsonify({"message": "Error interno al capturar imagen"}), 500
-
-    @video.route('/start_recording', methods=['POST', 'OPTIONS'])
+    @video.route('/start_recording', methods=['POST'])
     def start_recording():
-        print("✅ Entrando a start_recording", flush=True)
-
+        print("📡 Entrando a /start_recording", flush=True)
         if recording_flag.is_set():
-            print("⚠️ Ya hay una grabación en curso", flush=True)
-            return jsonify({
-                "message": "La grabación ya está en curso.",
-                "status": "warning"
-            }), 409
+            return jsonify({"message":"Grabación ya en curso","status":"warning"}), 409
 
-        try:
-            print("🟢 Iniciando nueva sesión de grabación...", flush=True)
-            handler.record_queue.queue.clear()
-            handler.start_session()
+        handler.start_session()
+        recording_flag.set()
+        print("✅ recording_flag activado", flush=True)
 
-            if not handler.cap or not handler.cap.isOpened():
-                raise RuntimeError("La cámara no está disponible")
+        # 2) Record video en hilo real
+        threading.Thread(target=handler.record_video,
+                         args=(recording_flag,),
+                         daemon=True).start()
+        print("🎥 Hilo de grabación de video lanzado", flush=True)
 
-            recording_flag.set()
+        # 3) Record audio invoca su propio hilo
+        handler.start_audio_recording()
+        print("🎙️ Hilo de grabación de audio lanzado", flush=True)
 
-            def safe_record():
-                try:
-                    handler.record_video(recording_flag)
-                except Exception as e:
-                    print(f"💥 Error en hilo de grabación: {str(e)}", flush=True)
-                    recording_flag.clear()
+        return jsonify({"message":"Grabación iniciada","status":"success"}), 200
 
-            eventlet.spawn(safe_record)
-
-            eventlet.sleep(0.1)
-            if not recording_flag.is_set():
-                raise RuntimeError("No se pudo iniciar la grabación")
-
-            try:
-                print("🎙️ Iniciando grabación de audio automáticamente...")
-                audio_url = request.host_url.rstrip('/') + "/audio/record"
-                response = requests.post(audio_url)
-                print("🎤 Grabación de audio lanzada:", response.status_code)
-            except Exception as e:
-                print(f"❌ Error al iniciar audio automáticamente: {e}")
-
-            return jsonify({
-                "message": "Grabación iniciada correctamente",
-                "status": "success"
-            })
-
-        except Exception as e:
-            recording_flag.clear()
-            print(f"❌ Error al iniciar grabación: {str(e)}", flush=True)
-            return jsonify({
-                "error": str(e),
-                "message": "No se pudo iniciar la grabación",
-                "status": "error"
-            }), 500
-
-    @video.route('/stop_recording', methods=['POST', 'OPTIONS'])
+    @video.route('/stop_recording', methods=['POST'])
     def stop_recording():
-        if recording_flag.is_set():
-            recording_flag.clear()
-            time.sleep(1)
-            try:
-                print("🛑 Deteniendo grabación de audio automáticamente...")
-                audio_stop_url = request.host_url.rstrip('/') + "/audio/stop_recording"
-                response = requests.post(audio_stop_url)
-                print("🔇 Audio detenido:", response.status_code)
-            except Exception as e:
-                print(f"❌ Error al detener el audio:", e)
+        print("🔵 Entró a /stop_recording", flush=True)
+        if not recording_flag.is_set():
+            return jsonify({"message":"No hay grabación activa","status":"info"}), 200
 
-            return jsonify({
-                "message": "Grabación detenida",
-                "status": "success"
-            })
+        recording_flag.clear()
+        print("🛑 recording_flag desactivado", flush=True)
+
+        # Detener audio
+        handler.stop_audio_recording()
+        print("✅ Audio detenido", flush=True)
+
+        # Aquí podrías también unirte al hilo de video si quisieras
+        # pero record_video deja de iterar cuando recording_flag.clear()
+
+        # Transcripción y guardado
+        transcription = handler.transcribe_audio()
+        encrypted = handler.save_transcription(transcription)
+        print("✅ Transcripción guardada", flush=True)
 
         return jsonify({
-            "message": "No hay grabación en curso",
-            "status": "info"
-        })
+            "message":"Grabación detenida",
+            "transcription": transcription,
+            "transcription_file": os.path.basename(encrypted),
+            "status":"success"}), 200
+
+    return video
 
     @video.route('/shutdown', methods=['POST'])
     def shutdown():

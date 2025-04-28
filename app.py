@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 import os
 import time
 import subprocess
@@ -31,8 +28,8 @@ audio_processing_lock = Lock()
 transcription_log = []
 
 # ✅ Blueprints
-audio_bp = create_audio_blueprint(media_handler, socketio)
-video_bp = create_video_blueprint(media_handler, socketio)
+audio_bp = create_audio_blueprint(media_handler)
+video_bp = create_video_blueprint(media_handler)
 
 app.register_blueprint(video_bp, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
