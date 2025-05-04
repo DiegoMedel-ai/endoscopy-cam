@@ -1,101 +1,322 @@
 import os
 import time
+import threading
+import subprocess
+import wave
+import json
+import queue
+import pyaudio
 import cv2
 from cryptography.fernet import Fernet
+from vosk import Model, KaldiRecognizer
 from dotenv import load_dotenv
+import tempfile
 
 load_dotenv()
+
+def find_capture_device():
+    for i in range(4):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            print(f"Dispositivo de video encontrado en /dev/video{i}", flush=True)
+            return cap
+    raise RuntimeError("No se encontró una capturadora de video disponible.")
 
 class MediaHandler:
     def __init__(self, base_folder):
         self.base_folder = base_folder
         self.session_folder = None
+        self.video_process = None
+        self.audio_green_thread = None
+        self.audio_stop_event = None
+        self.audio_path = None
+        self.record_queue = queue.Queue()
+        self.stream_queue = queue.Queue(maxsize=10)
+        self.latest_frame = None
 
-        # Obtener la clave de cifrado desde las variables de entorno
         self.secret_key = os.getenv("SECRET_KEY")
-        
+        if not self.secret_key:
+            raise ValueError("SECRET_KEY no está definida en el entorno.")
         self.cipher = Fernet(self.secret_key.encode())
 
-    def start_session(self):
+        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
+        self.model = Model(model_path)
 
+        self.cap = find_capture_device()
+
+    def start_session(self):
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         self.session_folder = os.path.join(self.base_folder, timestamp)
         os.makedirs(self.session_folder, exist_ok=True)
+        print(f"Carpeta de sesión creada: {self.session_folder}", flush=True)
 
-    def save_snapshot(self, frame):
- 
-        if self.session_folder is None:
-            raise ValueError("La sesión no ha sido iniciada. Llama a start_session() antes de guardar snapshots.")
-        
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        filename = f"Imagen_{timestamp}.jpg"
-        filepath = os.path.join(self.session_folder, filename)
+    def start_audio_recording(self):
+        print("🎙️ Iniciando start_audio_recording()", flush=True)
 
-        cv2.imwrite(filepath, frame)
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 16000
+        CHUNK = 1024
 
-        # Leer la imagen y cifrarla
-        with open(filepath, "rb") as file:
-            encrypted_data = self.cipher.encrypt(file.read())
+        # Preparamos ruta de salida
+        audio_filename = f"audio_{time.strftime('%Y%m%d-%H%M%S')}.wav"
+        self.audio_path = os.path.join(self.session_folder, audio_filename)
+        print(f"🎙️ Archivo de audio: {self.audio_path}", flush=True)
 
-        # Guardar el archivo cifrado con extension enc
-        encrypted_filepath = f"{filepath}.enc"
-        with open(encrypted_filepath, "wb") as encrypted_file:
-            encrypted_file.write(encrypted_data)
+        audio_interface = pyaudio.PyAudio()
 
-        os.remove(filepath)
+        try:
+            # Abrimos el stream (bloqueante) pero NO en el event loop
+            audio_stream = audio_interface.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK
+            )
+            print("✅ Stream de audio abierto", flush=True)
 
-        return filename + ".enc", encrypted_filepath
+            # Esta función SÍ correrá en un hilo OS real
+            def record_audio():
+                print("🎙️ Empezando a grabar audio...", flush=True)
+                with wave.open(self.audio_path, 'wb') as wf:
+                    wf.setnchannels(CHANNELS)
+                    wf.setsampwidth(audio_interface.get_sample_size(FORMAT))
+                    wf.setframerate(RATE)
 
-    def decrypt_file(self, encrypted_filepath):
-        """Descifra un archivo encriptado"""
-        with open(encrypted_filepath, "rb") as encrypted_file:
-            encrypted_data = encrypted_file.read()
-        
-        decrypted_data = self.cipher.decrypt(encrypted_data)
-        return decrypted_data
+                    # Este loop puede bloquear en .read(), pero SOLO dentro de este hilo
+                    while not self.audio_stop_event.is_set():
+                        try:
+                            data = audio_stream.read(CHUNK, exception_on_overflow=False)
+                            wf.writeframes(data)
+                        except Exception as e:
+                            print(f"⚠️ Error leyendo audio: {e}", flush=True)
+                            break
 
-    def generate(self, cap):
+                print("🛑 Cerrando stream de audio...", flush=True)
+                audio_stream.stop_stream()
+                audio_stream.close()
+                audio_interface.terminate()
+                print(f"✅ Audio guardado en: {self.audio_path}", flush=True)
+
+            # Creamos el Event para poder parar este hilo
+            self.audio_stop_event = threading.Event()
+
+            # ⚙️ Aquí lanzamos el hilo REAL de Python (no eventlet)
+            self.audio_thread = threading.Thread(target=record_audio, daemon=True)
+            self.audio_thread.start()
+            print("✅ Hilo real de grabación de audio lanzado", flush=True)
+
+        except Exception as e:
+            print(f"❌ Error en start_audio_recording: {e}", flush=True)
+            audio_interface.terminate()
+
+
+    def stop_audio_recording(self):
+        print("🛑 Entrando a stop_audio_recording()", flush=True)
+        if self.audio_green_thread:
+            self.audio_stop_event.set()
+            self.audio_green_thread.wait()
+            print("✅ Audio detenido correctamente", flush=True)
+
+    def record_video(self, recording_flag):
+        print("🎥 Iniciando record_video()", flush=True)
+        width = 640
+        height = 480
+        resolution = f"{width}x{height}"
+
+        video_filename = f"video_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+        video_path = os.path.join(self.session_folder, video_filename)
+        print(f"🎥 Archivo de video: {video_path}", flush=True)
+
+        command = [
+            'ffmpeg',
+            '-y',
+            '-f', 'rawvideo',
+            '-pix_fmt', 'bgr24',
+            '-s', resolution,
+            '-r', '24',
+            '-i', '-',
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'baseline',
+            '-movflags', '+faststart',
+            '-loglevel', 'error',
+            video_path
+        ]
+
+        self.video_process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print("✅ FFmpeg lanzado", flush=True)
+
+        frame_count = 0
+        try:
+            while recording_flag.is_set() or not self.record_queue.empty():
+                if not self.record_queue.empty():
+                    frame = self.record_queue.get()
+                    try:
+                        self.video_process.stdin.write(frame.tobytes())
+                        frame_count += 1
+                        if frame_count % 30 == 0:
+                            print(f"🎞️ Frames grabados: {frame_count}", flush=True)
+                    except Exception as e:
+                        print(f"❌ Error escribiendo frame: {e}", flush=True)
+                        break
+                else:
+                    time.sleep(0.01)
+
+            print(f"🛑 Finalizando grabación de video ({frame_count} frames)...", flush=True)
+            try:
+                self.video_process.stdin.close()
+            except Exception:
+                pass
+
+            self.video_process.wait(timeout=10)
+            print(f"✅ FFmpeg finalizado con código {self.video_process.returncode}", flush=True)
+            
+            # Encriptar el video después de grabarlo
+            encrypted_path = self.encrypt_file(video_path)
+            print(f"✅ Video encriptado guardado en: {encrypted_path}", flush=True)
+            
+        except Exception as e:
+            print(f"❌ Error en grabación de video: {e}", flush=True)
+            if self.video_process:
+                self.video_process.kill()
+
+        finally:
+            self.video_process = None
+
+    def capture_frames(self):
+        print("🎥 Iniciando captura de frames...", flush=True)
+        if not self.cap.isOpened():
+            print("❌ No se pudo abrir la cámara.", flush=True)
+            return
 
         while True:
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if not ret:
                 continue
 
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
-                continue
+            if self.stream_queue.full():
+                self.stream_queue.get()
+            self.stream_queue.put(frame)
+            self.record_queue.put(frame)
+            self.latest_frame = frame.copy()
+
+            time.sleep(0.01)
+
+    def generate(self):
+        while True:
+            if not self.stream_queue.empty():
+                frame = self.stream_queue.get()
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    continue
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            else:
+                time.sleep(0.01)
+
+    def transcribe_audio(self):
+        print("🧠 Iniciando transcripción de audio...", flush=True)
+        if not self.audio_path or not os.path.exists(self.audio_path):
+            raise FileNotFoundError("❌ No se encontró el archivo de audio para transcribir.")
+
+        wf = wave.open(self.audio_path, "rb")
+        rec = KaldiRecognizer(self.model, wf.getframerate())
+        text = ""
+
+        # Leemos chunks y vamos imprimiendo cada fragmento reconocido
+        while True:
+            data = wf.readframes(4000)
+            if not data:
+                break
+            if rec.AcceptWaveform(data):
+                result = json.loads(rec.Result())
+                chunk = result.get("text", "").strip()
+                if chunk:
+                    print(f"🗣️ Fragmento reconocido: \"{chunk}\"", flush=True)
+                    text += chunk + " "
+
+        # Procesamos resultado final
+        final = json.loads(rec.FinalResult())
+        final_chunk = final.get("text", "").strip()
+        if final_chunk:
+            print(f"🗣️ Fragmento final: \"{final_chunk}\"", flush=True)
+            text += final_chunk
+
+        transcript = text.strip()
+        print(f"✅ Transcripción terminada: \"{transcript}\"", flush=True)
+        return transcript
+
+    
+    def save_transcription(self, text: str) -> str:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        path_txt = os.path.join(self.session_folder,
+                                f"transcripcion_{timestamp}.txt")
+        with open(path_txt, "w", encoding="utf-8") as f:
+            f.write(text)
+
+        print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
+        return path_txt
+    
+    def encrypt_file(self, input_path, output_path=None):
+        """Encripta un archivo y devuelve la ruta del archivo encriptado"""
+        if output_path is None:
+            output_path = input_path + '.enc'
             
-            frame = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        with open(input_path, 'rb') as f:
+            data = f.read()
+        
+        encrypted_data = self.cipher.encrypt(data)
+        
+        with open(output_path, 'wb') as f:
+            f.write(encrypted_data)
+            
+        # Eliminar el archivo original
+        os.remove(input_path)
+        
+        return output_path
 
-    def record_video(self, cap, recording_flag):
+    def decrypt_file(self, input_path, output_path=None):
+        """Desencripta un archivo y devuelve los datos desencriptados"""
+        if output_path is None:
+            # Modo temporal: crea un archivo temporal
+            output_path = tempfile.NamedTemporaryFile(delete=False).name
+            
+        with open(input_path, 'rb') as f:
+            encrypted_data = f.read()
+        
+        try:
+            decrypted_data = self.cipher.decrypt(encrypted_data)
+        except Exception as e:
+            print(f"Error al desencriptar {input_path}: {e}")
+            raise
+            
+        with open(output_path, 'wb') as f:
+            f.write(decrypted_data)
+            
+        return output_path
+    
+    def save_snapshot(self, frame):
+        """Guarda una imagen encriptada"""
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"foto_{timestamp}.jpg"
+        temp_path = os.path.join(self.session_folder, filename)
+        
+        # Guardar temporalmente sin encriptar
+        cv2.imwrite(temp_path, frame)
+        
+        # Encriptar y eliminar original
+        encrypted_path = self.encrypt_file(temp_path)
+        encrypted_filename = os.path.basename(encrypted_path)
+        
+        print(f"✅ Imagen encriptada guardada como: {encrypted_filename}", flush=True)
+        return encrypted_filename, encrypted_path
 
-        if self.session_folder is None:
-            raise ValueError("La sesión no ha sido iniciada. Llama a start_session() antes de grabar video.")
 
-        video_filename = f"video_{time.strftime('%Y%m%d-%H%M%S')}.avi"
-        video_path = os.path.join(self.session_folder, video_filename)
-
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        video_writer = cv2.VideoWriter(video_path, fourcc, 20.0, (640, 480))
-
-        while recording_flag.is_set():
-            ret, frame = cap.read()
-            if ret:
-                video_writer.write(frame)
-
-        video_writer.release()
-
-        # Leer el video y cifrarlo
-        with open(video_path, "rb") as video_file:
-            encrypted_data = self.cipher.encrypt(video_file.read())
-
-        encrypted_video_path = f"{video_path}.enc"
-        with open(encrypted_video_path, "wb") as encrypted_file:
-            encrypted_file.write(encrypted_data)
-
-        # Eliminar el video original
-        os.remove(video_path)
-
-        return encrypted_video_path

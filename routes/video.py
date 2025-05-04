@@ -1,106 +1,109 @@
-from flask import Blueprint, jsonify, Response, request
-import threading
-import cv2
 import os
+import threading
 import time
-from services.media_handler import MediaHandler
+from flask import Blueprint, jsonify, Response, request
 from dotenv import load_dotenv
-from app_context import app
 
 load_dotenv()
-
-# Configuración inicial
-video = Blueprint('video', __name__)
-PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
-os.makedirs(PROCEDURE_FOLDER, exist_ok=True)
-
-media_handler = MediaHandler(PROCEDURE_FOLDER)
-def find_capture_device():
-    for i in range(4):
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            print(f"Dispositivo de video encontrado en /dev/video{i}")
-            return cap
-    raise RuntimeError("No se encontró una capturadora de video disponible.")
-
-cap = find_capture_device()
 recording_flag = threading.Event()
 
-environment = os.getenv("environment", "dev")
+import threading, time
+from flask import Blueprint, jsonify, Response
+# ya no necesitas eventlet aquí
 
-# Configuración del GPIO para el botón
-if environment == "prod":
-    import gpiod
-    BUTTON_PIN = 70
-    chip = gpiod.Chip('gpiochip0')
-    button_line = chip.get_line(BUTTON_PIN)
-    button_line.request(consumer="button", type=gpiod.LINE_REQ_DIR_IN)
+def create_video_blueprint(handler):
+    video = Blueprint('video', __name__)
 
-button_pressed = False
+    # 1) Captura de frames en hilo real
+    threading.Thread(target=handler.capture_frames, daemon=True).start()
 
-# Función para leer el botón
-def read_button():
-    global button_pressed
-    with app.app_context():  # Usamos el contexto global de la aplicación Flask
-        while True:
-            try:
-                button_state = button_line.get_value()
-                if button_state == 1 and not button_pressed:
-                    button_pressed = True
-                    capture()
-                    print("Botón presionado")
+    @video.route('/video_feed')
+    def video_feed():
+        return Response(handler.generate(),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+        return Response(handler.generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-                    while button_line.get_value() == 1:
-                        time.sleep(0.1)
+    @video.route('/capture', methods=['POST'])
+    def capture():
+        try:
+            frame = handler.latest_frame
+            if frame is None:
+                return jsonify({"message": "Aún no hay frames disponibles para capturar"}), 500
 
-                    button_pressed = False
-            except Exception as e:
-                print(f"Error en read_button: {e}")
-            
-            time.sleep(0.1)
+            filename, filepath = handler.save_snapshot(frame)
 
-if environment == "prod":
-    button_thread = threading.Thread(target=read_button)
-    button_thread.daemon = True
-    button_thread.start()
+            # Obtener la carpeta de la foto
+            folder = os.path.basename(os.path.dirname(filepath))
+            display_name = filename.replace('.enc', '')
 
-@video.route('/video_feed')
-def video_feed():
-    return Response(media_handler.generate(cap), mimetype='multipart/x-mixed-replace; boundary=frame')
+            print(f"📸 Imagen guardada como {display_name} en la carpeta {folder}")
 
-@video.route('/capture', methods=['POST'])
-def capture():
-    if not recording_flag.is_set():
-        return jsonify({"message": "No se está grabando. Inicie una grabación antes de capturar imágenes."}), 400
+            # Devolver nombre de la carpeta y el archivo
+            return jsonify({
+                "message": f"Imagen guardada como {filename}",
+                "path": filepath,
+                "folder": folder,
+                "filename": filename
+            })
 
-    ret, frame = cap.read()
-    if not ret:
-        return jsonify({"message": "Inicia una grabacion para capturar un video"}), 500
+        except Exception as e:
+            print("❌ Error al capturar imagen:", e)
+            return jsonify({"message": "Error interno al capturar imagen"}), 500
+        
 
-    filename, filepath = media_handler.save_snapshot(frame)
-    print("Imagen guardada")
-    return jsonify({"message": f"Imagen guardada como {filename}", "path": filepath})
+    @video.route('/start_recording', methods=['POST'])
+    def start_recording():
+        print("📡 Entrando a /start_recording", flush=True)
+        if recording_flag.is_set():
+            return jsonify({"message":"Grabación ya en curso","status":"warning"}), 409
 
-@video.route('/start_recording', methods=['POST'])
-def start_recording():
-    if not recording_flag.is_set():
-        media_handler.start_session()  # Inicia la sesión
+        handler.start_session()
         recording_flag.set()
-        video_thread = threading.Thread(target=media_handler.record_video, args=(cap, recording_flag))
-        video_thread.start()
-        return jsonify({"message": "Grabación iniciada."})
-    return jsonify({"message": "La grabación ya está en curso."})
+        print("✅ recording_flag activado", flush=True)
 
-@video.route('/stop_recording', methods=['POST'])
-def stop_recording():
-    if recording_flag.is_set():
+        # 2) Record video en hilo real
+        threading.Thread(target=handler.record_video,
+                         args=(recording_flag,),
+                         daemon=True).start()
+        print("🎥 Hilo de grabación de video lanzado", flush=True)
+
+        # 3) Record audio invoca su propio hilo
+        handler.start_audio_recording()
+        print("🎙️ Hilo de grabación de audio lanzado", flush=True)
+
+        return jsonify({"message":"Grabación iniciada","status":"success"}), 200
+
+    @video.route('/stop_recording', methods=['POST'])
+    def stop_recording():
+        print("🔵 Entró a /stop_recording", flush=True)
+        if not recording_flag.is_set():
+            return jsonify({"message":"No hay grabación activa","status":"info"}), 200
+
         recording_flag.clear()
-        return jsonify({"message": "Grabación detenida."})
-    return jsonify({"message": "No hay grabación en curso."})
+        print("🛑 recording_flag desactivado", flush=True)
 
-@video.route('/shutdown', methods=['POST'])
-def shutdown():
-    cap.release()
-    if environment == "prod":
-        button_line.release()
-    return jsonify({"message": "Cámara liberada y aplicación cerrada."})
+        # Detener audio
+        handler.stop_audio_recording()
+        print("✅ Audio detenido", flush=True)
+
+        # Aquí podrías también unirte al hilo de video si quisieras
+        # pero record_video deja de iterar cuando recording_flag.clear()
+
+        # Transcripción y guardado
+        transcription = handler.transcribe_audio()
+        encrypted = handler.save_transcription(transcription)
+        print("✅ Transcripción guardada", flush=True)
+
+        return jsonify({
+            "message":"Grabación detenida",
+            "transcription": transcription,
+            "transcription_file": os.path.basename(encrypted),
+            "status":"success"}), 200
+
+    return video
+
+    @video.route('/shutdown', methods=['POST'])
+    def shutdown():
+        return jsonify({"message": "Cámara liberada y aplicación cerrada."})
+
+    return video
