@@ -36,6 +36,9 @@ app.register_blueprint(gallery, url_prefix='/gallery')
 app.register_blueprint(audio_bp, url_prefix='/audio')
 
 
+print("MAX_CONTENT_LENGTH:", app.config['MAX_CONTENT_LENGTH'])
+
+
 # ----------------------------------------------------------
 # FUNCIONES Y ENDPOINTS
 # ----------------------------------------------------------
@@ -113,4 +116,5 @@ def upload_audio():
 # MAIN APP
 # ----------------------------------------------------------
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True, use_reloader=False)

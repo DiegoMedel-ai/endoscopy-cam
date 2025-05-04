@@ -8,6 +8,7 @@ import tempfile
 from xhtml2pdf import pisa
 from werkzeug.utils import secure_filename
 from services.media_handler import MediaHandler
+from babel.dates import format_date
 
 # Cargar variables de entorno
 load_dotenv()
@@ -21,19 +22,17 @@ media_handler = MediaHandler(IMAGE_BASE_FOLDER)
 
 def traducir_fecha(fecha_numerica):
     try:
-        # Establecer el idioma español
-        locale.setlocale(locale.LC_TIME, 'es_ES' if 'es_ES' in locale.locale_alias else 'es_MX.utf8')
-
-        # Dividir en fecha y hora
         partes = fecha_numerica.split('-')
-        fecha = datetime.strptime(partes[0], "%Y%m%d")
-        
+        fecha = datetime.strptime(partes[0], "%Y%m%d").date()
+
+        fecha_legible = format_date(fecha, format='d \'de\' MMMM \'de\' y', locale='es')
+
         if len(partes) > 1:
             hora = partes[1]  # HHMMSS
-            return f"{fecha.strftime('%d de %B de %Y').lstrip('0').replace(' 0', ' ')} a las {hora[:2]}:{hora[2:4]}"
+            hora_legible = f"{hora[:2]}:{hora[2:4]}"
+            return f"{fecha_legible} a las {hora_legible}"
         else:
-            return fecha.strftime("%d de %B de %Y").lstrip('0').replace(' 0', ' ')
-
+            return fecha_legible
     except ValueError as e:
         print(f"Error al convertir la fecha: {e}")
         return fecha_numerica
@@ -221,51 +220,33 @@ def take_last_photo():
 
 @gallery.route('/generar_pdf', methods=['POST'])
 def generar_pdf():
-    html_content = request.form.get('html')
-    session_folder = request.form.get('session_folder')
-    images = request.files.getlist('images')
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se recibieron datos'}), 400
+
+    html_content = data.get('html')
+    session_folder = data.get('session_folder')
 
     if not html_content or not session_folder:
         return jsonify({'error': 'Faltan parámetros requeridos'}), 400
 
-    image_paths = []
-    for img in images:
-        filename = secure_filename(img.filename)
-        # Buscar tanto la versión encriptada como la no encriptada
-        encrypted_path = os.path.join(IMAGE_BASE_FOLDER, session_folder, filename + '.enc')
-        normal_path = os.path.join(IMAGE_BASE_FOLDER, session_folder, filename)
-        
-        if os.path.exists(encrypted_path):
-            # Desencriptar temporalmente para el PDF
-            temp_file = media_handler.decrypt_file(encrypted_path)
-            image_paths.append(temp_file)
-        elif os.path.exists(normal_path):
-            image_paths.append(normal_path)
-        else:
-            continue
-
-    # Reemplazar referencias en el HTML
-    for img_path in image_paths:
-        filename = os.path.basename(img_path)
-        html_content = html_content.replace(f"src=\"{filename}\"", f"src=\"file://{img_path}\"")
+    # Asegurarse de que html_content es una cadena
+    if not isinstance(html_content, str):
+        return jsonify({'error': 'El contenido HTML debe ser una cadena'}), 400
 
     pdf_path = os.path.join(IMAGE_BASE_FOLDER, session_folder, 'reporte.pdf')
 
-    with open(pdf_path, "wb") as pdf_file:
-        pisa_status = pisa.CreatePDF(html_content, dest=pdf_file)
+    try:
+        with open(pdf_path, "wb") as pdf_file:
+            pisa_status = pisa.CreatePDF(html_content, dest=pdf_file)
 
-    # Limpiar archivos temporales
-    for img_path in image_paths:
-        if img_path.endswith('.temp'):
-            try:
-                os.remove(img_path)
-            except:
-                pass
+        if pisa_status.err:
+            return jsonify({'error': 'Error al generar el PDF'}), 500
 
-    if pisa_status.err:
-        return jsonify({'error': 'Error al generar el PDF'}), 500
+        return jsonify({'pdf_path': pdf_path}), 200
 
-    return jsonify({'pdf_path': pdf_path}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @gallery.route('/delete-image', methods=['DELETE'])
 def delete_image():
