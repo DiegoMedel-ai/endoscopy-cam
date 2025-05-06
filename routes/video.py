@@ -9,7 +9,6 @@ recording_flag = threading.Event()
 
 import threading, time
 from flask import Blueprint, jsonify, Response
-# ya no necesitas eventlet aquí
 
 def create_video_blueprint(handler):
     video = Blueprint('video', __name__)
@@ -56,7 +55,10 @@ def create_video_blueprint(handler):
         if recording_flag.is_set():
             return jsonify({"message":"Grabación ya en curso","status":"warning"}), 409
 
-        handler.start_session()
+        data = request.get_json()
+        usuario = data.get('usuario', 'desconocido')
+        print(f"👤 Usuario recibido: {usuario}", flush=True)
+        handler.start_session(usuario)
         recording_flag.set()
         print("✅ recording_flag activado", flush=True)
 

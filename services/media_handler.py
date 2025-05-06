@@ -43,9 +43,12 @@ class MediaHandler:
 
         self.cap = find_capture_device()
 
-    def start_session(self):
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        self.session_folder = os.path.join(self.base_folder, timestamp)
+    def start_session(self,usuario=None):
+        if usuario == None:
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            self.session_folder = os.path.join(self.base_folder, timestamp)
+        else:
+            self.session_folder = os.path.join(self.base_folder, usuario+"_"+time.strftime("%Y%m%d-%H%M%S"))
         os.makedirs(self.session_folder, exist_ok=True)
         print(f"Carpeta de sesión creada: {self.session_folder}", flush=True)
 
@@ -101,7 +104,6 @@ class MediaHandler:
             # Creamos el Event para poder parar este hilo
             self.audio_stop_event = threading.Event()
 
-            # ⚙️ Aquí lanzamos el hilo REAL de Python (no eventlet)
             self.audio_thread = threading.Thread(target=record_audio, daemon=True)
             self.audio_thread.start()
             print("✅ Hilo real de grabación de audio lanzado", flush=True)
@@ -113,10 +115,13 @@ class MediaHandler:
 
     def stop_audio_recording(self):
         print("🛑 Entrando a stop_audio_recording()", flush=True)
-        if self.audio_green_thread:
+        if hasattr(self, 'audio_thread') and self.audio_thread.is_alive():
             self.audio_stop_event.set()
-            self.audio_green_thread.wait()
+            self.audio_thread.join()  # Espera a que el hilo termine
             print("✅ Audio detenido correctamente", flush=True)
+        else:
+            print("⚠️ No hay hilo de audio activo o ya terminó", flush=True)
+
 
     def record_video(self, recording_flag):
         print("🎥 Iniciando record_video()", flush=True)
