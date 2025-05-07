@@ -10,6 +10,7 @@ import cv2
 from cryptography.fernet import Fernet
 from vosk import Model, KaldiRecognizer
 from dotenv import load_dotenv
+import tempfile
 
 load_dotenv()
 
@@ -182,7 +183,11 @@ class MediaHandler:
 
             self.video_process.wait(timeout=10)
             print(f"✅ FFmpeg finalizado con código {self.video_process.returncode}", flush=True)
-
+            
+            # Encriptar el video después de grabarlo
+            encrypted_path = self.encrypt_file(video_path)
+            print(f"✅ Video encriptado guardado en: {encrypted_path}", flush=True)
+            
         except Exception as e:
             print(f"❌ Error en grabación de video: {e}", flush=True)
             if self.video_process:
@@ -264,5 +269,59 @@ class MediaHandler:
 
         print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
         return path_txt
+    
+    def encrypt_file(self, input_path, output_path=None):
+        """Encripta un archivo y devuelve la ruta del archivo encriptado"""
+        if output_path is None:
+            output_path = input_path + '.enc'
+            
+        with open(input_path, 'rb') as f:
+            data = f.read()
+        
+        encrypted_data = self.cipher.encrypt(data)
+        
+        with open(output_path, 'wb') as f:
+            f.write(encrypted_data)
+            
+        # Eliminar el archivo original
+        os.remove(input_path)
+        
+        return output_path
+
+    def decrypt_file(self, input_path, output_path=None):
+        """Desencripta un archivo y devuelve los datos desencriptados"""
+        if output_path is None:
+            # Modo temporal: crea un archivo temporal
+            output_path = tempfile.NamedTemporaryFile(delete=False).name
+            
+        with open(input_path, 'rb') as f:
+            encrypted_data = f.read()
+        
+        try:
+            decrypted_data = self.cipher.decrypt(encrypted_data)
+        except Exception as e:
+            print(f"Error al desencriptar {input_path}: {e}")
+            raise
+            
+        with open(output_path, 'wb') as f:
+            f.write(decrypted_data)
+            
+        return output_path
+    
+    def save_snapshot(self, frame):
+        """Guarda una imagen encriptada"""
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"foto_{timestamp}.jpg"
+        temp_path = os.path.join(self.session_folder, filename)
+        
+        # Guardar temporalmente sin encriptar
+        cv2.imwrite(temp_path, frame)
+        
+        # Encriptar y eliminar original
+        encrypted_path = self.encrypt_file(temp_path)
+        encrypted_filename = os.path.basename(encrypted_path)
+        
+        print(f"✅ Imagen encriptada guardada como: {encrypted_filename}", flush=True)
+        return encrypted_filename, encrypted_path
 
 

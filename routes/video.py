@@ -33,8 +33,9 @@ def create_video_blueprint(handler):
 
             # Obtener la carpeta de la foto
             folder = os.path.basename(os.path.dirname(filepath))
+            display_name = filename.replace('.enc', '')
 
-            print(f"📸 Imagen guardada como {filename} en la carpeta {folder}")
+            print(f"📸 Imagen guardada como {display_name} en la carpeta {folder}")
 
             # Devolver nombre de la carpeta y el archivo
             return jsonify({
