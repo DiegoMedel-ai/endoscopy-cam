@@ -15,7 +15,7 @@ from services.media_handler import MediaHandler
 from app_context import app
 
 # ✅ Habilita CORS completo
-CORS(app, resources={r"/*": {"origins": "https://endoscopycam1.local"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "http://localhost:8100"}}, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ✅ Configuraciones

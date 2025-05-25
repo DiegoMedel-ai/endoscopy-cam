@@ -6,6 +6,7 @@ import wave
 import json
 import queue
 import pyaudio
+os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 import cv2
 from cryptography.fernet import Fernet
 from vosk import Model, KaldiRecognizer
