@@ -7,7 +7,7 @@ load_dotenv()
 def create_audio_blueprint(handler):
     audio = Blueprint('audio', __name__)
 
-    @audio.route('/audio/start', methods=['POST'])
+    @audio.route('/start', methods=['POST'])
     def start_audio():
         print("📡 Entrando a /audio/start", flush=True)
         try:
@@ -27,7 +27,7 @@ def create_audio_blueprint(handler):
             return jsonify({"error": str(e), "status": "error"}), 500
 
 
-    @audio.route('/audio/stop', methods=['POST'])
+    @audio.route('/stop', methods=['POST'])
     def stop_audio():
         print("📡 Entrando a /audio/stop", flush=True)
         try:
@@ -35,14 +35,23 @@ def create_audio_blueprint(handler):
             handler.stop_audio_recording()
             print("✅ Grabación de audio detenida correctamente", flush=True)
 
-            return jsonify({"message": "Grabación de audio detenida", "status": "success"})
+            print("🧠 Transcribiendo audio...", flush=True)
+            text = handler.transcribe_audio()
+            print("✅ Transcripción completa obtenida", flush=True)
+
+            return jsonify({
+                "message": "Grabación detenida y transcripción exitosa",
+                "status": "success",
+                "transcripcion": text
+            })
 
         except Exception as e:
-            print(f"❌ Error al detener grabación de audio: {e}", flush=True)
+            print(f"❌ Error: {e}", flush=True)
             return jsonify({"error": str(e), "status": "error"}), 500
 
 
-    @audio.route('/audio/transcribe', methods=['GET'])
+
+    @audio.route('/transcribe', methods=['GET'])
     def transcribe_audio():
         print("📡 Entrando a /audio/transcribe", flush=True)
         try:
