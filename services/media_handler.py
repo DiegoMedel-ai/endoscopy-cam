@@ -24,12 +24,25 @@ def find_capture_device():
         return _capture_device
 
     for i in range(4):
-        cap = cv2.VideoCapture(i)
+        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"Dispositivo de video encontrado en /dev/video{i}", flush=True)
             _capture_device = True  # Almacena el dispositivo para reutilizarlo
             return cap
     raise RuntimeError("No se encontró una capturadora de video disponible.")
+
+
+def warmup_camera(cap, warmup_frames=60):  # prueba con 60
+    print("⏳ Esperando a que la cámara se estabilice...")
+    for i in range(warmup_frames):
+        ret, frame = cap.read()
+        if not ret:
+            print(f"Frame {i} no válido")
+        else:
+            print(f"Frame {i} OK")
+        time.sleep(0.1)  # más delay, le das más chance al driver
+    print("✅ Cámara estabilizada.")
+
 
 class MediaHandler:
     def __init__(self, base_folder, is_for_image=False):
@@ -53,6 +66,10 @@ class MediaHandler:
 
         if not is_for_image:
             self.cap = find_capture_device()
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            warmup_camera(self.cap)
+            print("✅ Dispositivo de captura de video inicializado correctamente", flush=True)
 
     def start_session(self,usuario=None):
         if usuario == None:

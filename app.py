@@ -257,4 +257,4 @@ def connect():
 # MAIN APP
 # ----------------------------------------------------------
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80, debug=False)
+    app.run(host='192.168.12.1', port=80, debug=False)
