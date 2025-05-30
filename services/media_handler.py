@@ -212,10 +212,19 @@ class MediaHandler:
             print("❌ No se pudo abrir la cámara.", flush=True)
             return
 
+        # Define la resolución máxima permitida
+        max_width = 640
+        max_height = 480
+
         while True:
             ret, frame = self.cap.read()
             if not ret:
                 continue
+
+            # Redimensionar si es necesario
+            height, width = frame.shape[:2]
+            if width > max_width or height > max_height:
+                frame = cv2.resize(frame, (max_width, max_height), interpolation=cv2.INTER_AREA)
 
             if self.stream_queue.full():
                 self.stream_queue.get()
