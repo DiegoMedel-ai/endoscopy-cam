@@ -9,7 +9,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 
 from routes.gallery import gallery
-from routes.audio import create_audio_blueprint
+# from routes.audio import create_audio_blueprint
 from routes.video import create_video_blueprint
 from services.media_handler import MediaHandler
 from app_context import app
@@ -28,12 +28,12 @@ audio_processing_lock = Lock()
 transcription_log = []
 
 # ✅ Blueprints
-audio_bp = create_audio_blueprint(media_handler)
+# audio_bp = create_audio_blueprint(media_handler)
 video_bp = create_video_blueprint(media_handler)
 
 app.register_blueprint(video_bp, url_prefix='/video')
 app.register_blueprint(gallery, url_prefix='/gallery')
-app.register_blueprint(audio_bp, url_prefix='/audio')
+# app.register_blueprint(audio_bp, url_prefix='/audio')
 
 INTERFACE = 'wlxa047d75c7b0a'  # Cambia a tu interfaz si es necesario
 

@@ -24,12 +24,25 @@ def find_capture_device():
         return _capture_device
 
     for i in range(4):
-        cap = cv2.VideoCapture(i)
+        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"Dispositivo de video encontrado en /dev/video{i}", flush=True)
             _capture_device = True  # Almacena el dispositivo para reutilizarlo
             return cap
     raise RuntimeError("No se encontró una capturadora de video disponible.")
+
+def warmup_camera(cap, warmup_frames=60):  # prueba con 60
+    print("⏳ Esperando a que la cámara se estabilice...")
+    for i in range(warmup_frames):
+        ret, frame = cap.read()
+        if not ret:
+            print(f"Frame {i} no válido")
+        else:
+            print(f"Frame {i} OK")
+        time.sleep(0.1)  # más delay, le das más chance al driver
+    print("✅ Cámara estabilizada.")
+
+
 
 class MediaHandler:
     def __init__(self, base_folder, is_for_image=False):
@@ -53,6 +66,12 @@ class MediaHandler:
 
         if not is_for_image:
             self.cap = find_capture_device()
+
+        if self.cap:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            warmup_camera(self.cap)
+            print("✅ Dispositivo de captura de video inicializado correctamente", flush=True)
 
     def start_session(self,usuario=None):
         if usuario == None:
@@ -212,19 +231,11 @@ class MediaHandler:
             print("❌ No se pudo abrir la cámara.", flush=True)
             return
 
-        # Define la resolución máxima permitida
-        max_width = 640
-        max_height = 480
 
         while True:
             ret, frame = self.cap.read()
             if not ret:
                 continue
-
-            # Redimensionar si es necesario
-            height, width = frame.shape[:2]
-            if width > max_width or height > max_height:
-                frame = cv2.resize(frame, (max_width, max_height), interpolation=cv2.INTER_AREA)
 
             if self.stream_queue.full():
                 self.stream_queue.get()
@@ -246,48 +257,48 @@ class MediaHandler:
             else:
                 time.sleep(0.01)
 
-    def transcribe_audio(self):
-        print("🧠 Iniciando transcripción de audio...", flush=True)
-        if not self.audio_path or not os.path.exists(self.audio_path):
-            raise FileNotFoundError("❌ No se encontró el archivo de audio para transcribir.")
+    # def transcribe_audio(self):
+    #     print("🧠 Iniciando transcripción de audio...", flush=True)
+    #     if not self.audio_path or not os.path.exists(self.audio_path):
+    #         raise FileNotFoundError("❌ No se encontró el archivo de audio para transcribir.")
 
-        wf = wave.open(self.audio_path, "rb")
-        rec = KaldiRecognizer(self.model, wf.getframerate())
-        text = ""
+    #     wf = wave.open(self.audio_path, "rb")
+    #     rec = KaldiRecognizer(self.model, wf.getframerate())
+    #     text = ""
 
-        # Leemos chunks y vamos imprimiendo cada fragmento reconocido
-        while True:
-            data = wf.readframes(4000)
-            if not data:
-                break
-            if rec.AcceptWaveform(data):
-                result = json.loads(rec.Result())
-                chunk = result.get("text", "").strip()
-                if chunk:
-                    print(f"🗣️ Fragmento reconocido: \"{chunk}\"", flush=True)
-                    text += chunk + " "
+    #     # Leemos chunks y vamos imprimiendo cada fragmento reconocido
+    #     while True:
+    #         data = wf.readframes(4000)
+    #         if not data:
+    #             break
+    #         if rec.AcceptWaveform(data):
+    #             result = json.loads(rec.Result())
+    #             chunk = result.get("text", "").strip()
+    #             if chunk:
+    #                 print(f"🗣️ Fragmento reconocido: \"{chunk}\"", flush=True)
+    #                 text += chunk + " "
 
-        # Procesamos resultado final
-        final = json.loads(rec.FinalResult())
-        final_chunk = final.get("text", "").strip()
-        if final_chunk:
-            print(f"🗣️ Fragmento final: \"{final_chunk}\"", flush=True)
-            text += final_chunk
+    #     # Procesamos resultado final
+    #     final = json.loads(rec.FinalResult())
+    #     final_chunk = final.get("text", "").strip()
+    #     if final_chunk:
+    #         print(f"🗣️ Fragmento final: \"{final_chunk}\"", flush=True)
+    #         text += final_chunk
 
-        transcript = text.strip()
-        print(f"✅ Transcripción terminada: \"{transcript}\"", flush=True)
-        return transcript
+    #     transcript = text.strip()
+    #     print(f"✅ Transcripción terminada: \"{transcript}\"", flush=True)
+    #     return transcript
 
     
-    def save_transcription(self, text: str) -> str:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        path_txt = os.path.join(self.session_folder,
-                                f"transcripcion_{timestamp}.txt")
-        with open(path_txt, "w", encoding="utf-8") as f:
-            f.write(text)
+    # def save_transcription(self, text: str) -> str:
+    #     timestamp = time.strftime("%Y%m%d-%H%M%S")
+    #     path_txt = os.path.join(self.session_folder,
+    #                             f"transcripcion_{timestamp}.txt")
+    #     with open(path_txt, "w", encoding="utf-8") as f:
+    #         f.write(text)
 
-        print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
-        return path_txt
+    #     print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
+    #     return path_txt
     
     def encrypt_file(self, input_path, output_path=None):
         """Encripta un archivo y devuelve la ruta del archivo encriptado"""
