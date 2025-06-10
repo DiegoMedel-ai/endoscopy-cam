@@ -9,7 +9,7 @@ import pyaudio
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 import cv2
 from cryptography.fernet import Fernet
-from vosk import Model, KaldiRecognizer
+#from vosk import Model, KaldiRecognizer
 from dotenv import load_dotenv
 import tempfile
 
@@ -61,8 +61,8 @@ class MediaHandler:
             raise ValueError("SECRET_KEY no está definida en el entorno.")
         self.cipher = Fernet(self.secret_key.encode())
 
-        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
-        self.model = Model(model_path)
+        # model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
+        #self.model = Model(model_path)
 
         if not is_for_image:
             self.cap = find_capture_device()
