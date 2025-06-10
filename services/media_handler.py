@@ -25,7 +25,6 @@ def find_capture_device():
 
     for i in range(4):
         cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
-        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"Dispositivo de video encontrado en /dev/video{i}", flush=True)
             _capture_device = True  # Almacena el dispositivo para reutilizarlo
@@ -67,12 +66,6 @@ class MediaHandler:
 
         if not is_for_image:
             self.cap = find_capture_device()
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            warmup_camera(self.cap)
-            print("✅ Dispositivo de captura de video inicializado correctamente", flush=True)
-
-        if self.cap:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             warmup_camera(self.cap)
