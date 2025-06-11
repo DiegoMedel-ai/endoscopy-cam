@@ -52,9 +52,12 @@ class MediaHandler:
         self.audio_green_thread = None
         self.audio_stop_event = None
         self.audio_path = None
-        self.record_queue = queue.Queue()
+        self.record_queue = queue.Queue(maxsize=120)
         self.stream_queue = queue.Queue(maxsize=10)
         self.latest_frame = None
+        self.capture_flag = threading.Event()
+        self.is_recording = False
+
 
         self.secret_key = os.getenv("SECRET_KEY")
         if not self.secret_key:
@@ -186,6 +189,10 @@ class MediaHandler:
         )
         print("✅ FFmpeg lanzado", flush=True)
 
+        self.is_recording = True
+        self.capture_flag.set()
+
+
         frame_count = 0
         try:
             while recording_flag.is_set() or not self.record_queue.empty():
@@ -214,7 +221,7 @@ class MediaHandler:
             # Encriptar el video después de grabarlo
             encrypted_path = self.encrypt_file(video_path)
             print(f"✅ Video encriptado guardado en: {encrypted_path}", flush=True)
-            
+            self.is_recording = False
         except Exception as e:
             print(f"❌ Error en grabación de video: {e}", flush=True)
             if self.video_process:
@@ -229,8 +236,9 @@ class MediaHandler:
             print("❌ No se pudo abrir la cámara.", flush=True)
             return
 
-
         while True:
+            self.capture_flag.wait()
+
             ret, frame = self.cap.read()
             if not ret:
                 continue
@@ -238,9 +246,13 @@ class MediaHandler:
             if self.stream_queue.full():
                 self.stream_queue.get()
             self.stream_queue.put(frame)
-            self.record_queue.put(frame)
-            self.latest_frame = frame.copy()
 
+            if self.is_recording:
+                if self.record_queue.full():
+                    self.record_queue.get()
+                self.record_queue.put(frame)
+
+            self.latest_frame = frame.copy()
             time.sleep(0.01)
 
     def generate(self):
