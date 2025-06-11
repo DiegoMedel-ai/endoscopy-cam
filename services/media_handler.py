@@ -64,8 +64,8 @@ class MediaHandler:
             raise ValueError("SECRET_KEY no está definida en el entorno.")
         self.cipher = Fernet(self.secret_key.encode())
 
-        # model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
-        #self.model = Model(model_path)
+        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vosk-model-small-es-0.42"))
+        self.model = Model(model_path)
 
         if not is_for_image:
             self.cap = find_capture_device()
@@ -267,48 +267,48 @@ class MediaHandler:
             else:
                 time.sleep(0.01)
 
-    # def transcribe_audio(self):
-    #     print("🧠 Iniciando transcripción de audio...", flush=True)
-    #     if not self.audio_path or not os.path.exists(self.audio_path):
-    #         raise FileNotFoundError("❌ No se encontró el archivo de audio para transcribir.")
+    def transcribe_audio(self):
+        print("🧠 Iniciando transcripción de audio...", flush=True)
+        if not self.audio_path or not os.path.exists(self.audio_path):
+            raise FileNotFoundError("❌ No se encontró el archivo de audio para transcribir.")
 
-    #     wf = wave.open(self.audio_path, "rb")
-    #     rec = KaldiRecognizer(self.model, wf.getframerate())
-    #     text = ""
+        wf = wave.open(self.audio_path, "rb")
+        rec = KaldiRecognizer(self.model, wf.getframerate())
+        text = ""
 
-    #     # Leemos chunks y vamos imprimiendo cada fragmento reconocido
-    #     while True:
-    #         data = wf.readframes(4000)
-    #         if not data:
-    #             break
-    #         if rec.AcceptWaveform(data):
-    #             result = json.loads(rec.Result())
-    #             chunk = result.get("text", "").strip()
-    #             if chunk:
-    #                 print(f"🗣️ Fragmento reconocido: \"{chunk}\"", flush=True)
-    #                 text += chunk + " "
+        # Leemos chunks y vamos imprimiendo cada fragmento reconocido
+        while True:
+            data = wf.readframes(4000)
+            if not data:
+                break
+            if rec.AcceptWaveform(data):
+                result = json.loads(rec.Result())
+                chunk = result.get("text", "").strip()
+                if chunk:
+                    print(f"🗣️ Fragmento reconocido: \"{chunk}\"", flush=True)
+                    text += chunk + " "
 
-    #     # Procesamos resultado final
-    #     final = json.loads(rec.FinalResult())
-    #     final_chunk = final.get("text", "").strip()
-    #     if final_chunk:
-    #         print(f"🗣️ Fragmento final: \"{final_chunk}\"", flush=True)
-    #         text += final_chunk
+        # Procesamos resultado final
+        final = json.loads(rec.FinalResult())
+        final_chunk = final.get("text", "").strip()
+        if final_chunk:
+            print(f"🗣️ Fragmento final: \"{final_chunk}\"", flush=True)
+            text += final_chunk
 
-    #     transcript = text.strip()
-    #     print(f"✅ Transcripción terminada: \"{transcript}\"", flush=True)
-    #     return transcript
+        transcript = text.strip()
+        print(f"✅ Transcripción terminada: \"{transcript}\"", flush=True)
+        return transcript
 
     
-    # def save_transcription(self, text: str) -> str:
-    #     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    #     path_txt = os.path.join(self.session_folder,
-    #                             f"transcripcion_{timestamp}.txt")
-    #     with open(path_txt, "w", encoding="utf-8") as f:
-    #         f.write(text)
+    def save_transcription(self, text: str) -> str:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        path_txt = os.path.join(self.session_folder,
+                                f"transcripcion_{timestamp}.txt")
+        with open(path_txt, "w", encoding="utf-8") as f:
+            f.write(text)
 
-    #     print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
-    #     return path_txt
+        print(f"✅ Transcripción guardada en claro en: {path_txt}", flush=True)
+        return path_txt
     
     def encrypt_file(self, input_path, output_path=None):
         """Encripta un archivo y devuelve la ruta del archivo encriptado"""
