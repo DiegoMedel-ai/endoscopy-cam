@@ -6,7 +6,6 @@ from threading import Lock
 
 from flask import Flask, render_template, request, jsonify, render_template_string, redirect, url_for
 from flask_cors import CORS
-from flask_socketio import SocketIO
 
 from routes.gallery import gallery
 # from routes.audio import create_audio_blueprint
@@ -16,7 +15,6 @@ from app_context import app
 
 # ✅ Habilita CORS completo
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ✅ Configuraciones
 PROCEDURE_FOLDER = os.path.join(os.getcwd(), 'PROCEDURES')
@@ -257,4 +255,4 @@ def connect():
 # MAIN APP
 # ----------------------------------------------------------
 if __name__ == '__main__':
-    app.run(host='192.168.12.1', port=80, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=False)
